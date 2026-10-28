@@ -20,6 +20,7 @@ public sealed class DockWindow : Window
     private readonly DispatcherTimer collapse=new();
     private readonly Forms.NotifyIcon tray;
     private bool expanded,all,dragging,blur,placing,suppressShortcutClick;
+    private bool shapeUpdatePending;
     private SettingsWindow? settings;
     private Point? dragStart;
     private Guid? dragId;
@@ -44,7 +45,8 @@ public sealed class DockWindow : Window
         DragOver+=(_,e)=> { e.Effects=e.Data.GetDataPresent(DataFormats.FileDrop)?DragDropEffects.Copy:e.Data.GetDataPresent("QuickAction.Pin")?DragDropEffects.Move:DragDropEffects.None; e.Handled=true; };
         Drop+=(_,e)=> { if(e.Data.GetData(DataFormats.FileDrop) is string[] files) foreach(var f in files.Where(LaunchBuilder.Supported)) OpenSettings(f); e.Handled=true; };
         SourceInitialized+=(_,_)=> { blur=WindowsServices.Backdrop(this); HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook(Hook); Render(); if(vm.Store.RecoveryMessage!=null) Notify(vm.Store.RecoveryMessage); };
-        SizeChanged+=(_,_)=>WindowsServices.Round(this,Math.Min(28,Math.Min(ActualWidth,ActualHeight)/2));
+        SizeChanged+=(_,_)=>QueueShapeUpdate();
+        ContentRendered+=(_,_)=>QueueShapeUpdate();
         SystemEvents.DisplaySettingsChanged+=DisplayChanged;
         SystemEvents.UserPreferenceChanged+=PreferencesChanged;
         Closed+=(_,_)=> { hover.Stop(); collapse.Stop(); tray.Dispose(); vm.Notification-=Notify; vm.Updated-=Refresh; SystemEvents.DisplaySettingsChanged-=DisplayChanged; SystemEvents.UserPreferenceChanged-=PreferencesChanged; };
@@ -52,7 +54,25 @@ public sealed class DockWindow : Window
     private void PreferencesChanged(object sender,UserPreferenceChangedEventArgs e)=>Dispatcher.BeginInvoke(()=> { blur=WindowsServices.Backdrop(this); Render(); });
     private void DisplayChanged(object? sender,EventArgs e)=>Dispatcher.BeginInvoke(()=> { if(!Forms.Screen.AllScreens.Any(s=>s.DeviceName==vm.Config.Monitor)) { vm.Config.Monitor=Forms.Screen.PrimaryScreen!.DeviceName; vm.Guard(vm.Save); } Render(); });
     private IntPtr Hook(IntPtr hwnd,int message,IntPtr w,IntPtr l,ref bool handled)
-    { if(message==0x02E0&&!placing) Dispatcher.BeginInvoke(Render); return IntPtr.Zero; }
+    {
+        if(message==0x02E0&&!placing) Dispatcher.BeginInvoke(Render);
+        // Reapply after WPF has finished its native resize/style processing.
+        if(message is 0x0047 or 0x02E0 or 0x007D) QueueShapeUpdate();
+        return IntPtr.Zero;
+    }
+    private void QueueShapeUpdate()
+    {
+        if(shapeUpdatePending) return;
+        shapeUpdatePending=true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>
+        {
+            shapeUpdatePending=false;
+            if(!IsVisible) return;
+            var radius=Math.Min(28,Math.Min(ActualWidth,ActualHeight)/2);
+            surface.CornerRadius=new(radius);
+            WindowsServices.Round(this,radius);
+        });
+    }
     private void Refresh() { if(!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(Refresh); return; } Render(); }
     private void Notify(string message)
     {
@@ -153,6 +173,7 @@ public sealed class DockWindow : Window
             var p=DockGeometry.Place(new(work.X,work.Y,work.Width,work.Height),vm.Config.Edge,vm.Config.Position,width*scale,height*scale);
             WindowsServices.SetWindowPos(hwnd,IntPtr.Zero,(int)Math.Round(p.X),(int)Math.Round(p.Y),(int)Math.Round(width*scale),(int)Math.Round(height*scale),0x0014);
             WindowsServices.Round(this,Math.Min(28,Math.Min(width,height)/2));
+            QueueShapeUpdate();
         }
         finally { placing=false; }
     }
