@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QuickAction</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #111827;
+      --muted: #4b5563;
+      --card: #f3f4f6;
+      --link: #2563eb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b0f19;
+        --fg: #e5e7eb;
+        --muted: #9ca3af;
+        --card: #111827;
+        --link: #60a5fa;
+      }
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 3rem 1.2rem;
+    }
+    h1, h2 {
+      line-height: 1.2;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+    }
+    a {
+      color: var(--link);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>QuickAction</h1>
+    <p>QuickAction is a lightweight Windows dock utility focused on fast access to pinned apps and installed applications.</p>
+    <div class="card">
+      <h2>Privacy</h2>
+      <p>QuickAction does not use telemetry or cloud sync. Read the full policy here: <a href="./privacy.html">Privacy Policy</a>.</p>
+    </div>
+    <p>Project repository: <a href="https://github.com/EvilArtist/QuickAction">github.com/EvilArtist/QuickAction</a></p>
+  </main>
+</body>
+</html>
