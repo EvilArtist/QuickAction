@@ -2,6 +2,8 @@
 
 Dock shortcut tiếng Việt cho Windows 11 x64, viết bằng WPF / .NET 10. Không cần chạy dock bằng quyền Administrator.
 
+Trang GitHub Pages: https://evilartist.github.io/QuickAction/ (bao gồm trang Privacy Policy tại `/privacy.html`).
+
 ## Chạy
 
 Giải nén `dist/QuickAction-win-x64.zip` vào thư mục cố định và mở `QuickAction.exe`. Di chuột lên thanh trắng ở cạnh trái để mở dock. Nút ⚙ mở Settings; ▦ mở tất cả ứng dụng. Khi chưa có shortcut, vào Settings hoặc kéo EXE/BAT/CMD/PS1/MSI vào dock để thêm.
