@@ -4,10 +4,19 @@ namespace QuickAction.Core;
 public sealed record LaunchRequest(string FileName, string Arguments, string WorkingDirectory, bool Admin);
 public static class LaunchBuilder
 {
+    public const string AppPrefix = "shell:AppsFolder\\";
+    public static bool IsInstalledApp(string path) => path.StartsWith(AppPrefix, StringComparison.OrdinalIgnoreCase);
     public static bool Supported(string path) => new[] { ".exe", ".bat", ".cmd", ".ps1", ".msi" }.Contains(System.IO.Path.GetExtension(path).ToLowerInvariant());
     public static LaunchRequest Build(Shortcut item, string systemDirectory)
     {
         var path = Environment.ExpandEnvironmentVariables(item.Path);
+        if (IsInstalledApp(path))
+        {
+            if (path.Length == AppPrefix.Length || path.IndexOfAny(['"', '\r', '\n']) >= 0) throw new ArgumentException("Định danh ứng dụng không hợp lệ.");
+            if (item.Admin || !string.IsNullOrWhiteSpace(item.Arguments)) throw new ArgumentException("Ứng dụng mở qua Windows không hỗ trợ quyền admin hoặc tham số riêng. Hãy chọn file EXE nếu cần.");
+            var windows = System.IO.Directory.GetParent(systemDirectory)!.FullName;
+            return new(System.IO.Path.Combine(windows,"explorer.exe"), "\""+path+"\"", windows, false);
+        }
         if (!System.IO.Path.IsPathFullyQualified(path) || path.Contains('"') || !Supported(path)) throw new ArgumentException("Chọn đường dẫn tuyệt đối đến EXE, BAT, CMD, PS1 hoặc MSI.");
         var work = string.IsNullOrWhiteSpace(item.WorkingDirectory) ? System.IO.Path.GetDirectoryName(path)! : Environment.ExpandEnvironmentVariables(item.WorkingDirectory);
         var args = item.Arguments.Trim(); var quoted = "\""+path+"\"";

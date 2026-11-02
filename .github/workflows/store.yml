@@ -1,0 +1,103 @@
+name: Build and publish Microsoft Store
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not interrupt an upload already in progress.
+concurrency:
+  group: store-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build
+        run: |
+          dotnet build QuickAction.slnx -c Release -m:1 -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+      - name: Core and launch tests
+        run: |
+          dotnet run --project QuickAction.Tests -c Release --no-build
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+      - name: Package self-contained MSIX
+        env:
+          STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          # Non-release builds can validate packaging before Partner Center setup.
+          $release = '${{ github.ref }}' -eq 'refs/heads/main' -and '${{ github.event_name }}' -ne 'pull_request'
+          if ($release) {
+            foreach ($key in @('STORE_IDENTITY_NAME','STORE_PUBLISHER','STORE_PUBLISHER_DISPLAY_NAME')) {
+              if (![Environment]::GetEnvironmentVariable($key)) { throw "Missing repository variable: $key. See docs/MICROSOFT-STORE.md" }
+            }
+          }
+          $identity = if ($env:STORE_IDENTITY_NAME) { $env:STORE_IDENTITY_NAME } else { 'QuickAction.CI' }
+          $publisher = if ($env:STORE_PUBLISHER) { $env:STORE_PUBLISHER } else { 'CN=QuickAction-CI' }
+          $display = if ($env:STORE_PUBLISHER_DISPLAY_NAME) { $env:STORE_PUBLISHER_DISPLAY_NAME } else { 'QuickAction CI' }
+          # UTC time gives ordered versions even when workflows are rerun. Store reserves revision 0.
+          $now = [DateTime]::UtcNow
+          $days = [int]($now.Date - [DateTime]'2020-01-01').TotalDays
+          $slot = [int][Math]::Floor($now.TimeOfDay.TotalSeconds / 2)
+          $version = "1.$days.$slot.0"
+          ./scripts/Build-StorePackage.ps1 -IdentityName $identity -Publisher $publisher -PublisherDisplayName $display -Version $version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QuickAction-store-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/store/*.msix
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    environment: microsoft-store
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: QuickAction-store-${{ github.run_id }}-${{ github.run_attempt }}
+          path: package
+      - name: Check Store credentials
+        env:
+          STORE_PRODUCT_ID: ${{ vars.STORE_PRODUCT_ID }}
+          TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+        run: |
+          foreach ($key in @('STORE_PRODUCT_ID','TENANT_ID','SELLER_ID','CLIENT_ID','CLIENT_SECRET')) {
+            if (![Environment]::GetEnvironmentVariable($key)) { throw "Missing Store configuration: $key" }
+          }
+      - uses: microsoft/microsoft-store-apppublisher@v1.1
+      - name: Authenticate and submit package
+        env:
+          STORE_PRODUCT_ID: ${{ vars.STORE_PRODUCT_ID }}
+          TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+        run: |
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          if ($LASTEXITCODE -ne 0) { throw 'Store authentication failed' }
+          $packages = @(Get-ChildItem package -Filter *.msix)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one MSIX' }
+          msstore publish $packages[0].FullName -id $env:STORE_PRODUCT_ID
+          if ($LASTEXITCODE -ne 0) { throw 'Store submission failed; inspect Partner Center before retrying' }
+          'Package submitted. Certification and availability are tracked in Partner Center.' >> $env:GITHUB_STEP_SUMMARY

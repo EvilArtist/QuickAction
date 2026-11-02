@@ -20,6 +20,12 @@ try
     item.Path=Path.ChangeExtension(file,"msi"); Check(LaunchBuilder.Build(item,root).Arguments.StartsWith("/i \""),"MSI install dispatch");
     item.WorkingDirectory=root; Check(LaunchBuilder.Build(item,root).WorkingDirectory==root,"Explicit working directory");
     item.Path="relative.exe"; Throws(()=>LaunchBuilder.Build(item,root),"Reject relative executable");
+    var storeApp=new Shortcut { Path=LaunchBuilder.AppPrefix+"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App" };
+    var appRequest=LaunchBuilder.Build(storeApp,Environment.SystemDirectory);
+    Check(appRequest.Arguments=="\""+storeApp.Path+"\"" && Path.GetFileName(appRequest.FileName)=="explorer.exe","Installed app ID builds quoted Windows activation request");
+    storeApp.Admin=true; Throws(()=>LaunchBuilder.Build(storeApp,Environment.SystemDirectory),"Reject unsupported installed app elevation");
+    storeApp.Admin=false; storeApp.Arguments="--extra"; Throws(()=>LaunchBuilder.Build(storeApp,Environment.SystemDirectory),"Reject unsupported installed app arguments");
+    storeApp.Arguments=""; storeApp.Path=LaunchBuilder.AppPrefix+"bad\"id"; Throws(()=>LaunchBuilder.Build(storeApp,Environment.SystemDirectory),"Reject malformed installed app ID");
     item.Path=Path.Combine(root,"test.txt"); Throws(()=>LaunchBuilder.Build(item,root),"Reject unsupported extension");
     var config=new Configuration(); for(int i=0;i<6;i++) config.Shortcuts.Add(new(){Name="Same application "+i,Path=file});
     foreach(var s in config.Shortcuts.Take(5)) Pins.Toggle(config,s);

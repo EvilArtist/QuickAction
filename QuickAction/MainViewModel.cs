@@ -19,14 +19,14 @@ public sealed class RelayCommand(Action<object?> execute) : ICommand
 }
 public sealed class MainViewModel : Observable
 {
-    public ConfigurationStore Store { get; } = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"QuickAction"));
+    public ConfigurationStore Store { get; }
     public Configuration Config { get; private set; }
     public ObservableCollection<Shortcut> Items { get; }=[];
     public IEnumerable<Shortcut> Pinned => Items.Where(s=>s.PinOrder.HasValue).OrderBy(s=>s.PinOrder);
     public event Action? Updated;
     public event Action<string>? Notification;
     private readonly HashSet<Guid> running=[];
-    public MainViewModel() { Config=Store.Load(); Reload(); }
+    public MainViewModel(string? dataDirectory=null) { Store=new(dataDirectory??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"QuickAction")); Config=Store.Load(); Reload(); }
     public void Reload() { Items.Clear(); foreach(var s in Config.Shortcuts) Items.Add(s); Changed(nameof(Pinned)); Updated?.Invoke(); }
     public void Save() { Config.Shortcuts=Items.ToList(); Store.Save(Config); Changed(nameof(Pinned)); Updated?.Invoke(); }
     public void Notify(string message)=>Notification?.Invoke(message);
@@ -42,7 +42,7 @@ public sealed class MainViewModel : Observable
         if(!running.Add(item.Id)) return;
         try
         {
-            if(!File.Exists(Environment.ExpandEnvironmentVariables(item.Path))) throw new FileNotFoundException("Không tìm thấy chương trình. Hãy sửa đường dẫn trong Settings.");
+            if(!LaunchBuilder.IsInstalledApp(item.Path) && !File.Exists(Environment.ExpandEnvironmentVariables(item.Path))) throw new FileNotFoundException("Không tìm thấy chương trình. Hãy sửa đường dẫn trong Settings.");
             var request=LaunchBuilder.Build(item,Environment.SystemDirectory);
             if(!Directory.Exists(request.WorkingDirectory)) throw new DirectoryNotFoundException("Thư mục làm việc không tồn tại.");
             var process=await Task.Run(()=>Process.Start(LaunchBuilder.StartInfo(request)));

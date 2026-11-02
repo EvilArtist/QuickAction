@@ -3,3 +3,4 @@
 dist/
 .vs/
 startup.log
+visual-preview*.log

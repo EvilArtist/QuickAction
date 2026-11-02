@@ -2,4 +2,5 @@
   <Project Path="QuickAction.Core/QuickAction.Core.csproj" />
   <Project Path="QuickAction/QuickAction.csproj" />
   <Project Path="QuickAction.Tests/QuickAction.Tests.csproj" />
+  <Project Path="QuickAction.VisualTests/QuickAction.VisualTests.csproj" />
 </Solution>

@@ -1,6 +1,7 @@
 using QuickAction.Core;
 using Microsoft.Win32;
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,12 +16,30 @@ namespace QuickAction;
 public sealed class DockWindow : Window
 {
     private readonly MainViewModel vm;
-    private readonly Border surface=new() { CornerRadius=new(28),BorderThickness=new(1),BorderBrush=new SolidColorBrush(Color.FromArgb(150,255,255,255)) };
+    private readonly Border surface=new() { CornerRadius=new(28),BorderThickness=new(0),UseLayoutRounding=true };
+    private readonly Canvas host=new();
+    private readonly RectangleGeometry reveal=new();
+    private readonly System.Windows.Shapes.Path backdrop=new() { IsHitTestVisible=false };
+    private CompositorBackdrop? compositorBackdrop;
+    private bool blurEnabled;
     private readonly DispatcherTimer hover=new() { Interval=TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer collapse=new();
+    private readonly DispatcherTimer animation=new(DispatcherPriority.Render) { Interval=TimeSpan.FromMilliseconds(16) };
     private readonly Forms.NotifyIcon tray;
-    private bool expanded,all,dragging,blur,placing,suppressShortcutClick;
-    private bool shapeUpdatePending;
+    private bool expanded,all,dragging,placing,suppressShortcutClick;
+    private readonly Stopwatch resizeClock=new();
+    private bool hasPlacement,resizing;
+    private bool rendering;
+    private double resizeFromWidth,resizeFromHeight,resizeToWidth,resizeToHeight;
+    private string placementMonitor="";
+    private Edge placementEdge;
+    private double placementScale;
+    private double visibleWidth=10,visibleHeight=100;
+    private double hostWidth,hostHeight;
+    private Area placementArea;
+    private double placementPosition;
+    private int nativePlacementCount;
+    private const double ResizeDurationMilliseconds=400;
     private SettingsWindow? settings;
     private Point? dragStart;
     private Guid? dragId;
@@ -29,49 +48,46 @@ public sealed class DockWindow : Window
     private bool Vertical=>vm.Config.Edge is Edge.Left or Edge.Right;
     public DockWindow(MainViewModel viewModel)
     {
-        vm=viewModel; DataContext=vm; SetResourceReference(StyleProperty,typeof(Window)); Title="QuickAction"; WindowStyle=WindowStyle.None; ResizeMode=ResizeMode.NoResize; ShowInTaskbar=false; ShowActivated=false; Background=Brushes.Transparent; Content=surface; AllowDrop=true;
+        vm=viewModel; DataContext=vm; SetResourceReference(StyleProperty,typeof(Window)); Title="QuickAction"; WindowStyle=WindowStyle.None; ResizeMode=ResizeMode.NoResize; ShowInTaskbar=false; ShowActivated=false; Background=Brushes.Transparent; Content=host; AllowDrop=true;
+        backdrop.Data=reveal; host.Clip=reveal; host.Children.Add(backdrop); host.Children.Add(surface);
+        // WPF owns content and input. The compositor draws blur and tint together
+        // through one rounded clip; accent blur ignores a layered HWND's region.
+        AllowsTransparency=true;
         Width=10; Height=100;
         tray=new Forms.NotifyIcon { Icon=System.Drawing.SystemIcons.Application,Text="QuickAction",Visible=true };
         var menu=new Forms.ContextMenuStrip(); menu.Items.Add("Hiện / ẩn dock",null,(_,_)=>Dispatcher.Invoke(()=> { if(IsVisible) Hide(); else { Show(); Render(); } })); menu.Items.Add("Settings",null,(_,_)=>Dispatcher.Invoke(()=>OpenSettings())); menu.Items.Add("Thoát",null,(_,_)=>Dispatcher.Invoke(()=>Application.Current.Shutdown())); tray.ContextMenuStrip=menu;
         tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(()=> { Show(); OpenAll(); Activate(); });
         vm.Notification+=Notify; vm.Updated+=Refresh;
-        hover.Tick+=(_,_)=> { hover.Stop(); if(!dragging) { expanded=true; Render(); } };
-        collapse.Tick+=(_,_)=> { collapse.Stop(); if(!IsMouseOver&&!all&&!dragging) { expanded=false; Keyboard.ClearFocus(); Render(); } };
-        MouseEnter+=(_,_)=> { collapse.Stop(); if(!expanded) hover.Start(); };
-        MouseLeave+=(_,_)=> { hover.Stop(); ScheduleCollapse(); };
-        Deactivated+=(_,_)=> { if(!dragging) { all=false; Keyboard.ClearFocus(); ScheduleCollapse(); Render(); } };
-        PreviewKeyDown+=(_,e)=> { if(e.Key==Key.Escape) { all=false; expanded=false; Keyboard.ClearFocus(); Render(); e.Handled=true; } };
+        animation.Tick+=ResizeFrame;
+        hover.Tick+=(_,_)=> { hover.Stop(); if(!resizing&&!dragging&&!expanded&&PointerInsideDock()) ChangeState(true,false); };
+        collapse.Tick+=(_,_)=> { collapse.Stop(); if(!resizing&&!dragging&&expanded&&!all&&!PointerInsideDock()) { Keyboard.ClearFocus(); ChangeState(false,false); } };
+        MouseEnter+=(_,_)=> { if(resizing||placing) return; collapse.Stop(); if(!expanded) hover.Start(); };
+        MouseLeave+=(_,_)=> { if(resizing||placing) return; hover.Stop(); ScheduleCollapse(); };
+        Deactivated+=(_,_)=> { if(!dragging&&!placing&&!rendering&&all) { Keyboard.ClearFocus(); ChangeState(true,false); } };
+        PreviewKeyDown+=(_,e)=> { if(e.Key==Key.Escape) { Keyboard.ClearFocus(); ChangeState(false,false); e.Handled=true; } };
         PreviewMouseLeftButtonDown+=StartDrag; PreviewMouseMove+=MoveDrag; PreviewMouseLeftButtonUp+=(_,_)=> { dragStart=null; dragId=null; };
         DragOver+=(_,e)=> { e.Effects=e.Data.GetDataPresent(DataFormats.FileDrop)?DragDropEffects.Copy:e.Data.GetDataPresent("QuickAction.Pin")?DragDropEffects.Move:DragDropEffects.None; e.Handled=true; };
         Drop+=(_,e)=> { if(e.Data.GetData(DataFormats.FileDrop) is string[] files) foreach(var f in files.Where(LaunchBuilder.Supported)) OpenSettings(f); e.Handled=true; };
-        SourceInitialized+=(_,_)=> { blur=WindowsServices.Backdrop(this); HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook(Hook); Render(); if(vm.Store.RecoveryMessage!=null) Notify(vm.Store.RecoveryMessage); };
-        SizeChanged+=(_,_)=>QueueShapeUpdate();
-        ContentRendered+=(_,_)=>QueueShapeUpdate();
+        SourceInitialized+=(_,_)=>
+        {
+            var hwnd=new WindowInteropHelper(this).Handle;
+            HwndSource.FromHwnd(hwnd).AddHook(Hook);
+            try { compositorBackdrop=new CompositorBackdrop(hwnd); }
+            catch(Exception e) when(e is System.Runtime.InteropServices.ExternalException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException) { /* Use the opaque WPF fallback. */ }
+            Render(); if(vm.Store.RecoveryMessage!=null) Notify(vm.Store.RecoveryMessage);
+        };
         SystemEvents.DisplaySettingsChanged+=DisplayChanged;
         SystemEvents.UserPreferenceChanged+=PreferencesChanged;
-        Closed+=(_,_)=> { hover.Stop(); collapse.Stop(); tray.Dispose(); vm.Notification-=Notify; vm.Updated-=Refresh; SystemEvents.DisplaySettingsChanged-=DisplayChanged; SystemEvents.UserPreferenceChanged-=PreferencesChanged; };
+        IsVisibleChanged+=(_,_)=> { if(!IsVisible) { StopResize(); hover.Stop(); collapse.Stop(); hasPlacement=false; } else if(!hasPlacement) Dispatcher.BeginInvoke(Render); };
+        Closed+=(_,_)=> { StopResize(); hover.Stop(); collapse.Stop(); compositorBackdrop?.Dispose(); tray.Dispose(); vm.Notification-=Notify; vm.Updated-=Refresh; SystemEvents.DisplaySettingsChanged-=DisplayChanged; SystemEvents.UserPreferenceChanged-=PreferencesChanged; };
     }
-    private void PreferencesChanged(object sender,UserPreferenceChangedEventArgs e)=>Dispatcher.BeginInvoke(()=> { blur=WindowsServices.Backdrop(this); Render(); });
+    private void PreferencesChanged(object sender,UserPreferenceChangedEventArgs e)=>Dispatcher.BeginInvoke(Render);
     private void DisplayChanged(object? sender,EventArgs e)=>Dispatcher.BeginInvoke(()=> { if(!Forms.Screen.AllScreens.Any(s=>s.DeviceName==vm.Config.Monitor)) { vm.Config.Monitor=Forms.Screen.PrimaryScreen!.DeviceName; vm.Guard(vm.Save); } Render(); });
     private IntPtr Hook(IntPtr hwnd,int message,IntPtr w,IntPtr l,ref bool handled)
     {
+        if(message==0x0047) compositorBackdrop?.Sync(); // WM_WINDOWPOSCHANGED: move, size, visibility and Z order.
         if(message==0x02E0&&!placing) Dispatcher.BeginInvoke(Render);
-        // Reapply after WPF has finished its native resize/style processing.
-        if(message is 0x0047 or 0x02E0 or 0x007D) QueueShapeUpdate();
         return IntPtr.Zero;
-    }
-    private void QueueShapeUpdate()
-    {
-        if(shapeUpdatePending) return;
-        shapeUpdatePending=true;
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>
-        {
-            shapeUpdatePending=false;
-            if(!IsVisible) return;
-            var radius=Math.Min(28,Math.Min(ActualWidth,ActualHeight)/2);
-            surface.CornerRadius=new(radius);
-            WindowsServices.Round(this,radius);
-        });
     }
     private void Refresh() { if(!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(Refresh); return; } Render(); }
     private void Notify(string message)
@@ -79,8 +95,20 @@ public sealed class DockWindow : Window
         if(!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(()=>Notify(message)); return; }
         tray.BalloonTipTitle="QuickAction"; tray.BalloonTipText=message; tray.ShowBalloonTip(4000);
     }
-    private void ScheduleCollapse() { collapse.Interval=TimeSpan.FromMilliseconds(vm.Config.CollapseMilliseconds); collapse.Start(); }
-    public void OpenAll() { expanded=true; all=true; Render(); }
+    private void ScheduleCollapse() { if(!expanded||all||resizing||dragging) return; collapse.Stop(); collapse.Interval=TimeSpan.FromMilliseconds(vm.Config.CollapseMilliseconds); collapse.Start(); }
+    private bool PointerInsideDock()
+    {
+        if(!IsVisible || placementScale<=0) return false;
+        var cursor=WindowsServices.Cursor;
+        var origin=DockGeometry.Place(placementArea,placementEdge,placementPosition,hostWidth*placementScale,hostHeight*placementScale);
+        return reveal.FillContains(new Point((cursor.X-origin.X)/placementScale,(cursor.Y-origin.Y)/placementScale));
+    }
+    private void ChangeState(bool expand,bool showAll)
+    {
+        if(expanded==expand && all==showAll) return;
+        hover.Stop(); collapse.Stop(); expanded=expand; all=showAll; Render();
+    }
+    public void OpenAll() => ChangeState(true,true);
     public void OpenSettings(string? file=null)
     {
         if(settings==null) { settings=new SettingsWindow(vm); settings.Closed+=(_,_)=>settings=null; }
@@ -89,7 +117,8 @@ public sealed class DockWindow : Window
     private void StartDrag(object sender,MouseButtonEventArgs e)
     {
         var source=e.OriginalSource as DependencyObject;
-        while(source!=null && source is not Button && source is not TextBox && source is not CheckBox) source=VisualTreeHelper.GetParent(source);
+        while(source!=null && source is not Button && source is not TextBox && source is not CheckBox)
+            source=source is Visual || source is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
         if(source is Button button && button.Tag is Guid id) { dragId=id; dragStart=e.GetPosition(this); }
         else if(source==null) { dragId=null; dragStart=e.GetPosition(this); }
     }
@@ -97,7 +126,7 @@ public sealed class DockWindow : Window
     {
         if(e.LeftButton!=MouseButtonState.Pressed||dragStart==null||dragging) return;
         var point=e.GetPosition(this); if((point-dragStart.Value).Length<6) return;
-        dragging=true; hover.Stop(); collapse.Stop();
+        dragging=true; if(resizing) FinishResize(); hover.Stop(); collapse.Stop();
         try
         {
             if(dragId is Guid id) { suppressShortcutClick=true; DragDrop.DoDragDrop(this,new DataObject("QuickAction.Pin",id),DragDropEffects.Move); }
@@ -117,9 +146,21 @@ public sealed class DockWindow : Window
     }
     private void Render()
     {
+        // Native placement can synchronously raise focus/pointer events. Never
+        // allow those events to recursively replace a half-built visual tree.
+        if(rendering) return;
+        rendering=true;
+        try { RenderCore(); } finally { rendering=false; }
+    }
+    private void RenderCore()
+    {
         if(!IsInitialized) return;
         Topmost=vm.Config.Topmost;
-        surface.Background=SystemParameters.HighContrast?SystemColors.WindowBrush:new SolidColorBrush(Color.FromArgb(blur?(byte)(vm.Config.Opacity*255):(byte)255,248,250,255));
+        var transparency=WindowsServices.TransparencyEnabled;
+        blurEnabled=transparency && compositorBackdrop!=null;
+        // A nearly transparent WPF surface retains hit testing without adding a
+        // separately animated tint above the compositor's background.
+        backdrop.Fill=SystemParameters.HighContrast?SystemColors.WindowBrush:new SolidColorBrush(Color.FromArgb(blurEnabled?(byte)1:(byte)255,248,250,255));
         if(!expanded) { surface.Child=null; Place(Vertical?10:100,Vertical?100:10); return; }
         var root=new DockPanel { Margin=new(5),LastChildFill=true };
         var strip=new Grid();
@@ -133,7 +174,7 @@ public sealed class DockWindow : Window
             b.Drop+=(_,e)=> { if(e.Data.GetData("QuickAction.Pin") is Guid source) { vm.Reorder(source,item.Id); e.Handled=true; } };
             pins.Children.Add(b);
         }
-        var allButton=DockButton("\uE71D",()=> { all=!all; Render(); if(all) Activate(); },"Tất cả ứng dụng");
+        var allButton=DockButton("\uE71D",()=> { ChangeState(true,!all); if(all) Activate(); },"Tất cả ứng dụng");
         if(Vertical) Grid.SetRow(allButton,2); else Grid.SetColumn(allButton,2); strip.Children.Add(allButton);
         DockPanel.SetDock(strip,vm.Config.Edge switch { Edge.Right=>Dock.Right,Edge.Bottom=>Dock.Bottom,Edge.Top=>Dock.Top,_=>Dock.Left }); root.Children.Add(strip);
         if(all)
@@ -146,7 +187,7 @@ public sealed class DockWindow : Window
         surface.Child=root;
         var count=vm.Pinned.Count()+2;
         Place(all?650:Vertical?62:count*52+10,all?Math.Max(440,Vertical?count*52+10:440):Vertical?count*52+10:62);
-        if(SystemParameters.ClientAreaAnimation) { root.BeginAnimation(OpacityProperty,new DoubleAnimation(.65,1,TimeSpan.FromMilliseconds(180))); }
+        if(SystemParameters.ClientAreaAnimation) { root.BeginAnimation(OpacityProperty,new DoubleAnimation(.65,1,TimeSpan.FromMilliseconds(ResizeDurationMilliseconds))); }
     }
     private void FillRows()
     {
@@ -164,16 +205,99 @@ public sealed class DockWindow : Window
     }
     private void Place(double width,double height)
     {
+        var screen=WindowsServices.Screen(vm.Config); var scale=WindowsServices.Scale(screen); var work=screen.WorkingArea;
+        width=Math.Min(width,work.Width/scale); height=Math.Min(height,work.Height/scale);
+        var samePlacement=hasPlacement && placementMonitor==screen.DeviceName && placementEdge==vm.Config.Edge && Math.Abs(placementScale-scale)<.001 && Math.Abs(placementPosition-vm.Config.Position)<.001;
+        placementMonitor=screen.DeviceName; placementEdge=vm.Config.Edge; placementScale=scale;
+        placementArea=new(work.X,work.Y,work.Width,work.Height); placementPosition=vm.Config.Position;
+        if(resizing && samePlacement && Math.Abs(width-resizeToWidth)<.01 && Math.Abs(height-resizeToHeight)<.01 && SystemParameters.ClientAreaAnimation) return;
+        StopResize();
+        resizeToWidth=width; resizeToHeight=height;
+        if(!samePlacement || !IsVisible || dragging || !SystemParameters.ClientAreaAnimation || (Math.Abs(visibleWidth-width)<.5 && Math.Abs(visibleHeight-height)<.5))
+        {
+            CommitSize(width,height); hasPlacement=true; return;
+        }
+        resizeFromWidth=visibleWidth; resizeFromHeight=visibleHeight;
+        resizing=true; hover.Stop(); collapse.Stop();
+        // Allocate one envelope for the whole transition. The native HWND and
+        // the content layout remain unchanged until the final commit.
+        ApplyHostSize(Math.Max(visibleWidth,width),Math.Max(visibleHeight,height));
+        ArrangeContent(width,height);
+        SetReveal(visibleWidth,visibleHeight);
+        surface.IsHitTestVisible=false;
+        // Progress must not depend on composition callbacks: layered/occluded
+        // windows may stop receiving Rendering before the final frame.
+        resizeClock.Restart(); animation.Start();
+    }
+    private void ResizeFrame(object? sender,EventArgs e)
+    {
+        if(!IsVisible) { StopResize(); hasPlacement=false; return; }
+        if(dragging) { FinishResize(); return; }
+        ApplyResizeProgress(Math.Clamp(resizeClock.Elapsed.TotalMilliseconds/ResizeDurationMilliseconds,0,1));
+    }
+    private void ApplyResizeProgress(double progress)
+    {
+        var eased=1-Math.Pow(1-progress,3);
+        SetReveal(resizeFromWidth+(resizeToWidth-resizeFromWidth)*eased,resizeFromHeight+(resizeToHeight-resizeFromHeight)*eased);
+        if(progress>=1) FinishResize();
+    }
+    private Rect RevealRect(double width,double height)
+    {
+        var x=placementEdge==Edge.Left?0:placementEdge==Edge.Right?hostWidth-width:(hostWidth-width)*placementPosition;
+        var y=placementEdge==Edge.Top?0:placementEdge==Edge.Bottom?hostHeight-height:(hostHeight-height)*placementPosition;
+        return new Rect(Math.Max(0,x),Math.Max(0,y),width,height);
+    }
+    private void SetReveal(double width,double height)
+    {
+        visibleWidth=width; visibleHeight=height;
+        reveal.Rect=RevealRect(width,height);
+        reveal.RadiusX=reveal.RadiusY=Math.Min(28,Math.Min(width,height)/2);
+        if(compositorBackdrop!=null)
+        {
+            try { compositorBackdrop.Update(reveal.Rect,reveal.RadiusX,placementScale,vm.Config.Opacity,blurEnabled); }
+            catch(System.Runtime.InteropServices.ExternalException)
+            {
+                compositorBackdrop.Dispose(); compositorBackdrop=null; blurEnabled=false;
+                backdrop.Fill=SystemParameters.HighContrast?SystemColors.WindowBrush:new SolidColorBrush(Color.FromRgb(248,250,255));
+            }
+        }
+    }
+    private void ArrangeContent(double width,double height)
+    {
+        var rect=RevealRect(width,height);
+        surface.Width=width; surface.Height=height;
+        Canvas.SetLeft(surface,rect.X); Canvas.SetTop(surface,rect.Y);
+    }
+    private void CommitSize(double width,double height)
+    {
+        ApplyHostSize(width,height); ArrangeContent(width,height); SetReveal(width,height);
+        surface.IsHitTestVisible=true;
+    }
+    private void FinishResize()
+    {
+        animation.Stop();
+        // Keep transition guards active until the HWND and clip are committed.
+        CommitSize(resizeToWidth,resizeToHeight); StopResize();
+        if(!dragging && !all && expanded && !PointerInsideDock()) ScheduleCollapse();
+        // Use the final visible geometry, not WPF's stale IsMouseOver from the
+        // larger animation envelope. A real pointer over idle can still open it.
+        if(!dragging && !expanded && PointerInsideDock()) hover.Start();
+    }
+    private void StopResize()
+    {
+        animation.Stop();
+        resizing=false; resizeClock.Stop(); surface.IsHitTestVisible=true;
+    }
+    private void ApplyHostSize(double width,double height)
+    {
         var hwnd=new WindowInteropHelper(this).Handle; if(hwnd==IntPtr.Zero) return;
         placing=true;
         try
         {
-            var screen=WindowsServices.Screen(vm.Config); var scale=WindowsServices.Scale(screen); var work=screen.WorkingArea;
-            width=Math.Min(width,work.Width/scale); height=Math.Min(height,work.Height/scale); Width=width; Height=height;
-            var p=DockGeometry.Place(new(work.X,work.Y,work.Width,work.Height),vm.Config.Edge,vm.Config.Position,width*scale,height*scale);
-            WindowsServices.SetWindowPos(hwnd,IntPtr.Zero,(int)Math.Round(p.X),(int)Math.Round(p.Y),(int)Math.Round(width*scale),(int)Math.Round(height*scale),0x0014);
-            WindowsServices.Round(this,Math.Min(28,Math.Min(width,height)/2));
-            QueueShapeUpdate();
+            hostWidth=width; hostHeight=height; Width=width; Height=height;
+            var p=DockGeometry.Place(placementArea,placementEdge,placementPosition,width*placementScale,height*placementScale);
+            WindowsServices.SetWindowPos(hwnd,IntPtr.Zero,(int)Math.Round(p.X),(int)Math.Round(p.Y),(int)Math.Round(width*placementScale),(int)Math.Round(height*placementScale),0x0014);
+            nativePlacementCount++;
         }
         finally { placing=false; }
     }

@@ -1,0 +1,30 @@
+<!-- Colors.xaml: toàn bộ màu, font của app. Đổi theme = thay file này (hoặc nạp Colors.Dark.xaml). -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Nền & chữ -->
+    <SolidColorBrush x:Key="Brush.Bg" Color="#F4F5F8"/>
+    <SolidColorBrush x:Key="Brush.Surface" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="Brush.Border" Color="#E1E4EC"/>
+    <SolidColorBrush x:Key="Brush.Text" Color="#1A1F2E"/>
+    <SolidColorBrush x:Key="Brush.TextMuted" Color="#6A7186"/>
+
+    <!-- Màu nhấn -->
+    <SolidColorBrush x:Key="Brush.Accent" Color="#2F54EB"/>
+    <SolidColorBrush x:Key="Brush.AccentHover" Color="#2445CC"/>
+    <SolidColorBrush x:Key="Brush.AccentSoft" Color="#E9EEFE"/>
+
+    <!-- Nguy hiểm (Xóa) -->
+    <SolidColorBrush x:Key="Brush.Danger" Color="#D1344B"/>
+    <SolidColorBrush x:Key="Brush.DangerSoft" Color="#FCEBEE"/>
+
+    <!-- Sidebar -->
+    <SolidColorBrush x:Key="Brush.Sidebar" Color="#14192B"/>
+    <SolidColorBrush x:Key="Brush.SidebarHover" Color="#1E2540"/>
+    <SolidColorBrush x:Key="Brush.SidebarActive" Color="#2A3358"/>
+    <SolidColorBrush x:Key="Brush.SidebarText" Color="#C9CFE4"/>
+
+    <!-- Font -->
+    <FontFamily x:Key="Font.Main">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <FontFamily x:Key="Font.Icon">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+</ResourceDictionary>
