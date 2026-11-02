@@ -3,6 +3,8 @@ name: Build and publish Microsoft Store
 on:
   push:
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
