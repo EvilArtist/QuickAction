@@ -1,7 +1,7 @@
 <Window x:Class="QuickAction.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="QuickAction · Settings"
+        Title="{DynamicResource Loc.2}"
         Width="1040" Height="780" MinWidth="1000" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         Style="{DynamicResource Window.Base}">
@@ -27,11 +27,11 @@
                         <TextBlock Text="QuickAction" Foreground="White" FontSize="18" FontWeight="SemiBold"
                                    Margin="10,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock Text="Shortcut của bạn, luôn trong tầm tay."
+                    <TextBlock Text="{DynamicResource Loc.3}"
                                Foreground="#8F97B5" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"/>
                 </StackPanel>
 
-                <TextBlock DockPanel.Dock="Bottom" Text="Phiên bản 1.0" Foreground="#6C7494" FontSize="11"
+                <TextBlock DockPanel.Dock="Bottom" Text="{DynamicResource Loc.4}" Foreground="#6C7494" FontSize="11"
                            Margin="12,0,0,0"/>
 
                 <ListBox x:Name="NavList" Background="Transparent" BorderThickness="0"
@@ -40,18 +40,18 @@
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE945;" FontFamily="{DynamicResource Font.Icon}" Width="22" FontSize="15"/>
-                            <TextBlock Text="Shortcuts" Margin="8,0,0,0"/>
+                            <TextBlock Text="{DynamicResource Loc.5}" Margin="8,0,0,0"/>
                         </StackPanel>
                     </ListBoxItem>
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE713;" FontFamily="{DynamicResource Font.Icon}" Width="22" FontSize="15"/>
-                            <TextBlock Text="Dock &amp; hệ thống" Margin="8,0,0,0"/>
+                            <TextBlock Text="{DynamicResource Loc.0}" Margin="8,0,0,0"/>
                         </StackPanel>
                     </ListBoxItem>
                     <ListBoxItem><StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE896;" FontFamily="{DynamicResource Font.Icon}" Width="22" FontSize="15"/>
-                        <TextBlock Text="Sao lưu" Margin="8,0,0,0"/>
+                        <TextBlock Text="{DynamicResource Loc.6}" Margin="8,0,0,0"/>
                     </StackPanel></ListBoxItem>
                 </ListBox>
             </DockPanel>
@@ -63,8 +63,8 @@
                     <Border Style="{StaticResource Border.Card}" Padding="12">
                         <Grid>
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                            <Button x:Name="AddShortcutButton" Style="{StaticResource Button.Primary}" Height="38" Content="＋  Thêm shortcut"/>
-                            <TextBox x:Name="SearchBox" Grid.Row="1" Tag="Tìm shortcut" Height="34" Margin="0,10,0,10"/>
+                            <Button x:Name="AddShortcutButton" Style="{StaticResource Button.Primary}" Height="38" Content="{DynamicResource Loc.7}"/>
+                            <TextBox x:Name="SearchBox" Grid.Row="1" Tag="{DynamicResource Loc.8}" Height="34" Margin="0,10,0,10"/>
                             <Grid Grid.Row="2">
                                 <ListBox x:Name="ShortcutList" IsSynchronizedWithCurrentItem="False" BorderThickness="0" Background="Transparent" AllowDrop="True"
                                          ItemContainerStyle="{StaticResource ListBoxItem.Shortcut}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -86,8 +86,8 @@
                                 <Border x:Name="EmptyState" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="10" IsHitTestVisible="False">
                                     <StackPanel VerticalAlignment="Center" Margin="16">
                                         <TextBlock Text="&#xE896;" FontFamily="{DynamicResource Font.Icon}" FontSize="26" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextMuted}"/>
-                                        <TextBlock x:Name="EmptyTitle" Text="Chưa có shortcut nào" FontWeight="SemiBold" TextAlignment="Center" Margin="0,10,0,0"/>
-                                        <TextBlock Text="Kéo file .exe, .bat, .ps1 vào đây để thêm nhanh" Style="{StaticResource TextBlock.FieldHint}" TextAlignment="Center"/>
+                                        <TextBlock x:Name="EmptyTitle" Text="{DynamicResource Loc.9}" FontWeight="SemiBold" TextAlignment="Center" Margin="0,10,0,0"/>
+                                        <TextBlock Text="{DynamicResource Loc.10}" Style="{StaticResource TextBlock.FieldHint}" TextAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
@@ -105,40 +105,40 @@
                                 <!-- Thông tin chương trình -->
                                 <Border Style="{StaticResource Border.Card}" Padding="20" Margin="0,0,0,12">
                                     <StackPanel>
-                                        <TextBlock Text="Chương trình" Style="{StaticResource TextBlock.SectionTitle}"/>
+                                        <TextBlock Text="{DynamicResource Loc.11}" Style="{StaticResource TextBlock.SectionTitle}"/>
 
-                                        <TextBlock Text="Tên hiển thị" Style="{StaticResource TextBlock.FieldLabel}"/>
-                                        <TextBox x:Name="NameBox" Tag="Ví dụ: Mở Visual Studio"/>
+                                        <TextBlock Text="{DynamicResource Loc.12}" Style="{StaticResource TextBlock.FieldLabel}"/>
+                                        <TextBox x:Name="NameBox" Tag="{DynamicResource Loc.13}"/>
 
-                                        <TextBlock Text="Đường dẫn chương trình" Style="{StaticResource TextBlock.FieldLabel}" Margin="0,12,0,6"/>
+                                        <TextBlock Text="{DynamicResource Loc.14}" Style="{StaticResource TextBlock.FieldLabel}" Margin="0,12,0,6"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBox x:Name="PathBox" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                                                     Tag="EXE, BAT, CMD, PS1 hoặc MSI"/>
-                                            <Button x:Name="BrowsePathButton" Grid.Column="1" Content="Chọn file…"
+                                                     Tag="{DynamicResource Loc.15}"/>
+                                            <Button x:Name="BrowsePathButton" Grid.Column="1" Content="{DynamicResource Loc.16}"
                                                     Height="36" Margin="8,0,0,0"/>
                                         </Grid>
 
-                                        <Button x:Name="ChooseInstalledAppButton" Content="Chọn ứng dụng đã cài…"
+                                        <Button x:Name="ChooseInstalledAppButton" Content="{DynamicResource Loc.17}"
                                                 HorizontalAlignment="Left" Margin="0,8,0,0"/>
 
-                                        <TextBlock Text="Tham số" Style="{StaticResource TextBlock.FieldLabel}" Margin="0,12,0,6"/>
-                                        <TextBox x:Name="ArgsBox" Tag="--flag &quot;đường dẫn có khoảng trắng&quot;"/>
+                                        <TextBlock Text="{DynamicResource Loc.18}" Style="{StaticResource TextBlock.FieldLabel}" Margin="0,12,0,6"/>
+                                        <TextBox x:Name="ArgsBox" Tag="{DynamicResource Loc.19}"/>
                                         <TextBlock Style="{StaticResource TextBlock.FieldHint}"
-                                                   Text="Đặt dấu ngoặc kép quanh đối số có khoảng trắng."/>
+                                                   Text="{DynamicResource Loc.20}"/>
 
-                                        <TextBlock Text="Thư mục làm việc" Style="{StaticResource TextBlock.FieldLabel}" Margin="0,12,0,6"/>
+                                        <TextBlock Text="{DynamicResource Loc.21}" Style="{StaticResource TextBlock.FieldLabel}" Margin="0,12,0,6"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="WorkDirBox" ToolTip="Để trống để dùng thư mục của chương trình"
-                                                     Tag="Để trống để dùng thư mục của chương trình"/>
-                                            <Button x:Name="BrowseWorkDirButton" Grid.Column="1" Content="Chọn thư mục…"
+                                            <TextBox x:Name="WorkDirBox" ToolTip="{DynamicResource Loc.22}"
+                                                     Tag="{DynamicResource Loc.22}"/>
+                                            <Button x:Name="BrowseWorkDirButton" Grid.Column="1" Content="{DynamicResource Loc.23}"
                                                     Height="36" Margin="8,0,0,0"/>
                                         </Grid>
                                     </StackPanel>
@@ -147,35 +147,35 @@
                                 <!-- Tuỳ chọn chạy -->
                                 <Border Style="{StaticResource Border.Card}" Padding="20" Margin="0,0,0,8">
                                     <StackPanel>
-                                        <TextBlock Text="Cách chạy" Style="{StaticResource TextBlock.SectionTitle}"/>
+                                        <TextBlock Text="{DynamicResource Loc.24}" Style="{StaticResource TextBlock.SectionTitle}"/>
 
                                         <CheckBox x:Name="AdminCheck" HorizontalAlignment="Left">
                                             <StackPanel>
-                                                <TextBlock Text="Chạy với quyền admin" FontWeight="SemiBold"
+                                                <TextBlock Text="{DynamicResource Loc.25}" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource Brush.Text}"/>
-                                                <TextBlock Text="Windows sẽ hiện hộp thoại UAC để xác nhận."
+                                                <TextBlock Text="{DynamicResource Loc.26}"
                                                            FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"/>
                                             </StackPanel>
                                         </CheckBox>
 
                                         <Border Height="1" Background="{DynamicResource Brush.Border}" Margin="0,12"/>
 
-                                        <TextBlock Text="Icon" Style="{StaticResource TextBlock.FieldLabel}"/>
+                                        <TextBlock Text="{DynamicResource Loc.27}" Style="{StaticResource TextBlock.FieldLabel}"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <ComboBox x:Name="IconModeCombo" SelectedIndex="0">
-                                                <ComboBoxItem Content="Lấy từ chương trình"/>
-<ComboBoxItem Content="Ứng dụng"/>
-<ComboBoxItem Content="Terminal"/>
-<ComboBoxItem Content="Thư mục"/>
-<ComboBoxItem Content="Ngôi sao"/>
-<ComboBoxItem Content="Công cụ"/>
-<ComboBoxItem Content="Dùng icon riêng"/>
+                                                <ComboBoxItem Content="{DynamicResource Loc.28}"/>
+<ComboBoxItem Content="{DynamicResource Loc.29}"/>
+<ComboBoxItem Content="{DynamicResource Loc.30}"/>
+<ComboBoxItem Content="{DynamicResource Loc.31}"/>
+<ComboBoxItem Content="{DynamicResource Loc.32}"/>
+<ComboBoxItem Content="{DynamicResource Loc.33}"/>
+<ComboBoxItem Content="{DynamicResource Loc.34}"/>
                                             </ComboBox>
-                                            <Button x:Name="BrowseIconButton" Grid.Column="1" Content="Chọn icon…"
+                                            <Button x:Name="BrowseIconButton" Grid.Column="1" Content="{DynamicResource Loc.35}"
                                                     Height="36" Margin="8,0,0,0"/>
                                         </Grid>
                                         <TextBlock x:Name="IconStatus" Style="{StaticResource TextBlock.FieldHint}" Visibility="Collapsed"/>
@@ -185,7 +185,7 @@
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="&#xE768;" FontFamily="{DynamicResource Font.Icon}" FontSize="11"
                                                    VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <TextBlock Text="Chạy thử"/>
+                                        <TextBlock Text="{DynamicResource Loc.36}"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
@@ -194,12 +194,12 @@
                         <!-- Thanh hành động luôn hiển thị -->
                         <Border Grid.Row="1" Style="{StaticResource Border.Card}" Padding="12" Margin="0,8,0,0">
                             <WrapPanel>
-                                <Button x:Name="SaveButton" DockPanel.Dock="Left" Content="Lưu shortcut"
+                                <Button x:Name="SaveButton" DockPanel.Dock="Left" Content="{DynamicResource Loc.37}"
                                         Style="{StaticResource Button.Primary}" Margin="0,0,8,0"/>
-                                <Button x:Name="PinButton" DockPanel.Dock="Left" Content="Ghim / Bỏ ghim"
+                                <Button x:Name="PinButton" DockPanel.Dock="Left" Content="{DynamicResource Loc.38}"
                                        />
 
-                                <Button x:Name="DeleteButton" DockPanel.Dock="Right" Content="Xóa"
+                                <Button x:Name="DeleteButton" DockPanel.Dock="Right" Content="{DynamicResource Loc.39}"
                                         Style="{StaticResource Button.Danger}" Margin="8,0,0,0"/>
                             </WrapPanel>
                         </Border>

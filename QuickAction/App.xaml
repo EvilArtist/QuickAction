@@ -5,5 +5,40 @@
   <Style TargetType="Button"><Setter Property="Padding" Value="12,7"/><Setter Property="Margin" Value="3"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Background" Value="#EDF2FC"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="surface" Background="{TemplateBinding Background}" CornerRadius="10" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="surface" Property="Background" Value="#D9E7FF"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
   <Style TargetType="TextBox"><Setter Property="Padding" Value="9,7"/><Setter Property="Margin" Value="0,4,0,10"/><Setter Property="BorderBrush" Value="#CFD7E6"/><Setter Property="BorderThickness" Value="1"/></Style>
   <Style TargetType="CheckBox"><Setter Property="Margin" Value="4,8"/></Style>
+    <Style x:Key="AllApps.ScrollBar" TargetType="ScrollBar">
+        <Setter Property="Width" Value="10"/>
+        <Setter Property="Opacity" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent">
+                        <Border Width="3" Background="#E1E4EC" CornerRadius="2"/>
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border x:Name="Handle" Width="4" MinHeight="24" CornerRadius="3" Background="#AAB2C6"/>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Handle" Property="Width" Value="7"/></Trigger>
+                                                <Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="Background" Value="#737D95"/></Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=DockPanel}}" Value="True">
+                <DataTrigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.18"/></Storyboard></BeginStoryboard></DataTrigger.EnterActions>
+                <DataTrigger.ExitActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.25"/></Storyboard></BeginStoryboard></DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
  </Application.Resources>
 </Application>
+

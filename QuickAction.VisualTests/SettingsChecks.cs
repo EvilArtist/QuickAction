@@ -22,6 +22,34 @@ internal static class SettingsChecks
                 vm.Items.Add(new Shortcut { Name=title,Path=@"C:\Program Files\"+title+@"\app.exe",PinOrder=vm.Items.Count==0?0:null });
             window=new SettingsWindow(vm); window.Show(); Pump();
             T Find<T>(string name) where T:class => (T)window.FindName(name);
+            StackPanel Preferences()=>(StackPanel)Find<ContentControl>("PreferencesHost").Content;
+            ComboBox Language()=>Preferences().Children.OfType<ComboBox>().Single(c=>c.Name=="LanguageCombo");
+            Find<TextBox>("NameBox").Text="Nội dung chưa lưu";
+            Language().SelectedIndex=0; Pump();
+            if((string)Find<Button>("SaveButton").Content!="Save shortcut") throw new Exception("English resources did not update");
+            if(vm.Store.Load().Language!="en") throw new Exception("Language was not saved automatically");
+            if(Find<TextBox>("NameBox").Text!="Nội dung chưa lưu") throw new Exception("Language switch discarded editor content");
+            Capture(window,"settings-english");
+            Language().SelectedIndex=1; Pump();
+            if((string)Find<Button>("SaveButton").Content!="Lưu shortcut") throw new Exception("Vietnamese resources did not update");
+            typeof(SettingsWindow).GetMethod("Load",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(window,new object?[]{null});
+            Console.WriteLine("PASS Language: live English/Vietnamese switch preserves unsaved editor");
+            var preferences=Preferences();
+            if(preferences.Children.OfType<Button>().Any()) throw new Exception("Preferences still has a save button");
+            var edges=preferences.Children.OfType<ComboBox>().Last(); edges.SelectedIndex=(int)Edge.Right;
+            var opacity=preferences.Children.OfType<Slider>().Single(); opacity.Value=.55;
+            var topmost=preferences.Children.OfType<CheckBox>().First(); topmost.IsChecked=false; topmost.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var delay=preferences.Children.OfType<TextBox>().Single(); delay.Text="1200";
+            var saved=vm.Store.Load();
+            if(saved.Edge!=Edge.Right || saved.Opacity!=.55 || saved.Topmost || saved.CollapseMilliseconds!=1200) throw new Exception("Preferences were not applied and saved immediately");
+            foreach(var invalidDelay in new[]{"","abc","199","5001"})
+            {
+                delay.Text=invalidDelay;
+                if(vm.Config.CollapseMilliseconds!=1200 || vm.Store.Load().CollapseMilliseconds!=1200) throw new Exception("Invalid delay changed saved settings");
+            }
+            delay.Text="5000";
+            if(vm.Store.Load().CollapseMilliseconds!=5000) throw new Exception("Valid delay did not recover after invalid input");
+            Console.WriteLine("PASS Preferences: immediate updates, persistence and delay validation without a save button");
             var catalogType=typeof(SettingsWindow).Assembly.GetType("QuickAction.InstalledApps")!;
             var catalogTask=(System.Threading.Tasks.Task)catalogType.GetMethod("LoadAsync")!.Invoke(null,null)!;
             if(!catalogTask.Wait(TimeSpan.FromSeconds(30))) throw new Exception("App discovery timed out");

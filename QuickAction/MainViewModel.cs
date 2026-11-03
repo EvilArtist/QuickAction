@@ -27,8 +27,15 @@ public sealed class MainViewModel : Observable
     public event Action<string>? Notification;
     private readonly HashSet<Guid> running=[];
     public MainViewModel(string? dataDirectory=null) { Store=new(dataDirectory??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"QuickAction")); Config=Store.Load(); Reload(); }
-    public void Reload() { Items.Clear(); foreach(var s in Config.Shortcuts) Items.Add(s); Changed(nameof(Pinned)); Updated?.Invoke(); }
-    public void Save() { Config.Shortcuts=Items.ToList(); Store.Save(Config); Changed(nameof(Pinned)); Updated?.Invoke(); }
+    private void ApplyLanguage()
+    {
+        L10n.Language=Config.Language;
+        if(Application.Current is not { } app) return;
+        int index=0;
+        foreach(var entry in L10n.English) app.Resources["Loc."+index++]=L10n.T(entry.Key);
+    }
+    public void Reload() { ApplyLanguage(); Items.Clear(); foreach(var s in Config.Shortcuts) Items.Add(s); Changed(nameof(Pinned)); Updated?.Invoke(); }
+    public void Save() { Config.Shortcuts=Items.ToList(); Store.Save(Config); ApplyLanguage(); Changed(nameof(Pinned)); Updated?.Invoke(); }
     public void Notify(string message)=>Notification?.Invoke(message);
     public void Guard(Action action)
     {
@@ -42,11 +49,11 @@ public sealed class MainViewModel : Observable
         if(!running.Add(item.Id)) return;
         try
         {
-            if(!LaunchBuilder.IsInstalledApp(item.Path) && !File.Exists(Environment.ExpandEnvironmentVariables(item.Path))) throw new FileNotFoundException("Không tìm thấy chương trình. Hãy sửa đường dẫn trong Settings.");
+            if(!LaunchBuilder.IsInstalledApp(item.Path) && !File.Exists(Environment.ExpandEnvironmentVariables(item.Path))) throw new FileNotFoundException(L10n.T("Không tìm thấy chương trình. Hãy sửa đường dẫn trong Settings."));
             var request=LaunchBuilder.Build(item,Environment.SystemDirectory);
-            if(!Directory.Exists(request.WorkingDirectory)) throw new DirectoryNotFoundException("Thư mục làm việc không tồn tại.");
+            if(!Directory.Exists(request.WorkingDirectory)) throw new DirectoryNotFoundException(L10n.T("Thư mục làm việc không tồn tại."));
             var process=await Task.Run(()=>Process.Start(LaunchBuilder.StartInfo(request)));
-            Notify("Đã gửi yêu cầu chạy: "+item.Name);
+            Notify(L10n.T("Đã gửi yêu cầu chạy: ")+item.Name);
             if(process!=null)
             {
                 if(Path.GetExtension(item.Path).Equals(".ps1",StringComparison.OrdinalIgnoreCase)) _=ObserveScript(process,item.Name);
@@ -54,13 +61,13 @@ public sealed class MainViewModel : Observable
             }
             await Task.Delay(700);
         }
-        catch(Win32Exception e) when(e.NativeErrorCode==1223) { Notify("Đã hủy yêu cầu quyền admin."); }
-        catch(Exception e) { Log(e); Notify("Không thể chạy: "+e.Message); }
+        catch(Win32Exception e) when(e.NativeErrorCode==1223) { Notify(L10n.T("Đã hủy yêu cầu quyền admin.")); }
+        catch(Exception e) { Log(e); Notify(L10n.T("Không thể chạy: ")+e.Message); }
         finally { running.Remove(item.Id); }
     }
     private async Task ObserveScript(Process process,string name)
     {
-        try { await process.WaitForExitAsync(); if(process.ExitCode!=0) Notify($"Script {name} kết thúc với mã {process.ExitCode}. Kiểm tra nội dung script và ExecutionPolicy trong PowerShell; QuickAction không thay đổi chính sách này."); }
+        try { await process.WaitForExitAsync(); if(process.ExitCode!=0) Notify(string.Format(L10n.T("Script {0} kết thúc với mã {1}. Kiểm tra nội dung script và ExecutionPolicy trong PowerShell; QuickAction không thay đổi chính sách này."),name,process.ExitCode)); }
         catch(Exception e) { Log(e); } finally { process.Dispose(); }
     }
     private void Log(Exception exception)

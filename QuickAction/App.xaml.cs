@@ -1,3 +1,4 @@
+using QuickAction.Core;
 using System;
 using System.IO;
 using System.IO.Pipes;
@@ -37,7 +38,7 @@ public partial class App : Application
                 }
             });
         }
-        catch(Exception ex) { Trace(ex.ToString()); MessageBox.Show("Không thể khởi động QuickAction: "+ex.Message,"QuickAction"); Shutdown(1); }
+        catch(Exception ex) { Trace(ex.ToString()); MessageBox.Show(L10n.T("Không thể khởi động QuickAction: ")+ex.Message,"QuickAction"); Shutdown(1); }
     }
     protected override void OnExit(ExitEventArgs e) { shutdown.Cancel(); mutex?.Dispose(); base.OnExit(e); }
 }

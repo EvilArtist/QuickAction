@@ -29,7 +29,7 @@ internal static class InstalledApps
             {
                 shell=Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application",true)!);
                 folder=((dynamic)shell!).NameSpace("shell:AppsFolder");
-                if(folder==null) throw new InvalidOperationException("Windows không cung cấp danh sách ứng dụng.");
+                if(folder==null) throw new InvalidOperationException(L10n.T("Windows không cung cấp danh sách ứng dụng."));
                 items=((dynamic)folder).Items();
                 var result=new List<InstalledApp>();
                 int count=((dynamic)items).Count;
@@ -83,28 +83,28 @@ internal static class InstalledApps
 internal sealed class InstalledAppPicker : Window
 {
     private InstalledApp[] apps=Array.Empty<InstalledApp>();
-    private readonly TextBox search=new() { Margin=new(0,8,0,12),Tag="Tìm ứng dụng…" };
+    private readonly TextBox search=new() { Margin=new(0,8,0,12),Tag=L10n.T("Tìm ứng dụng…") };
     private readonly ListBox list=new();
-    private readonly TextBlock status=new() { Text="Đang tải danh sách ứng dụng…",Margin=new(0,10,0,10),TextWrapping=TextWrapping.Wrap };
-    private readonly Button choose=new() { Content="Chọn ứng dụng",IsDefault=true,IsEnabled=false,MinWidth=130 };
+    private readonly TextBlock status=new() { Text=L10n.T("Đang tải danh sách ứng dụng…"),Margin=new(0,10,0,10),TextWrapping=TextWrapping.Wrap };
+    private readonly Button choose=new() { Content=L10n.T("Chọn ứng dụng"),IsDefault=true,IsEnabled=false,MinWidth=130 };
     public InstalledApp? SelectedApp { get; private set; }
 
     public InstalledAppPicker()
     {
-        Title="Chọn ứng dụng đã cài"; Width=720; Height=660; MinWidth=460; MinHeight=420;
+        Title=L10n.T("Chọn ứng dụng đã cài"); Width=720; Height=660; MinWidth=460; MinHeight=420;
         WindowStartupLocation=WindowStartupLocation.CenterOwner;
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source=new Uri("/QuickAction;component/Themes/Colors.xaml",UriKind.Relative) });
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source=new Uri("/QuickAction;component/Themes/Controls.xaml",UriKind.Relative) });
         Style=(Style)FindResource("Window.Base");
         var panel=new DockPanel { Margin=new(20),Background=(System.Windows.Media.Brush)FindResource("Brush.Bg") }; Content=panel;
         var header=new StackPanel(); DockPanel.SetDock(header,Dock.Top); panel.Children.Add(header);
-        header.Children.Add(new TextBlock { Text="Tìm ứng dụng đã cài",FontSize=20,FontWeight=FontWeights.SemiBold });
+        header.Children.Add(new TextBlock { Text=L10n.T("Tìm ứng dụng đã cài"),FontSize=20,FontWeight=FontWeights.SemiBold });
         header.Children.Add(search);
         var footer=new StackPanel(); DockPanel.SetDock(footer,Dock.Bottom); panel.Children.Add(footer);
         footer.Children.Add(status);
-        footer.Children.Add(new TextBlock { Text="Chọn ứng dụng để điền đường dẫn và icon. Không thấy ứng dụng? Dùng Chọn file trong Settings.",TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,12) });
+        footer.Children.Add(new TextBlock { Text=L10n.T("Chọn ứng dụng để điền đường dẫn và icon. Không thấy ứng dụng? Dùng Chọn file trong Settings."),TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,12) });
         var buttons=new StackPanel { Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right };
-        var cancel=new Button { Content="Hủy",IsCancel=true,Margin=new(0,0,8,0) };
+        var cancel=new Button { Content=L10n.T("Hủy"),IsCancel=true,Margin=new(0,0,8,0) };
         buttons.Children.Add(cancel); buttons.Children.Add(choose); footer.Children.Add(buttons);
         panel.Children.Add(list);
         ScrollViewer.SetHorizontalScrollBarVisibility(list,ScrollBarVisibility.Disabled);
@@ -127,8 +127,8 @@ internal sealed class InstalledAppPicker : Window
               </StackPanel>
             </DataTemplate>
             """);
-        AutomationProperties.SetName(search,"Tìm ứng dụng đã cài");
-        AutomationProperties.SetName(list,"Danh sách ứng dụng đã cài");
+        AutomationProperties.SetName(search,L10n.T("Tìm ứng dụng đã cài"));
+        AutomationProperties.SetName(list,L10n.T("Danh sách ứng dụng đã cài"));
         search.TextChanged+=(_,_)=>Filter();
         list.SelectionChanged+=(_,_)=>choose.IsEnabled=list.SelectedItem is InstalledApp;
         choose.Click+=(_,_)=>Accept();
@@ -137,14 +137,14 @@ internal sealed class InstalledAppPicker : Window
         {
             search.Focus();
             try { apps=await InstalledApps.LoadAsync(); if(IsVisible) Filter(); }
-            catch(Exception) { if(IsVisible) status.Text="Không thể tải danh sách ứng dụng. Hãy đóng và thử lại hoặc dùng Chọn file."; }
+            catch(Exception) { if(IsVisible) status.Text=L10n.T("Không thể tải danh sách ứng dụng. Hãy đóng và thử lại hoặc dùng Chọn file."); }
         };
     }
     private void Filter()
     {
         var filtered=apps.Where(a=>a.Name.Contains(search.Text.Trim(),StringComparison.CurrentCultureIgnoreCase)).ToArray();
         list.ItemsSource=filtered;
-        status.Text=filtered.Length==0 ? "Không tìm thấy ứng dụng." : $"{filtered.Length} ứng dụng";
+        status.Text=filtered.Length==0 ? L10n.T("Không tìm thấy ứng dụng.") : string.Format(L10n.T("{0} ứng dụng"),filtered.Length);
     }
     private void Accept()
     {

@@ -11,7 +11,7 @@ public class Observable : INotifyPropertyChanged
 public sealed class Shortcut : Observable
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string Name { get; set; } = "Shortcut mới";
+    public string Name { get; set; } = L10n.T("Shortcut mới");
     public string Path { get; set; } = "";
     public string Arguments { get; set; } = "";
     public string WorkingDirectory { get; set; } = "";
@@ -25,6 +25,7 @@ public sealed class Shortcut : Observable
 public enum Edge { Left, Right, Top, Bottom }
 public sealed class Configuration
 {
+    public string Language { get; set; } = "vi";
     public int Version { get; set; } = 1;
     public List<Shortcut> Shortcuts { get; set; } = [];
     public string Monitor { get; set; } = "";
@@ -36,11 +37,12 @@ public sealed class Configuration
     public bool Startup { get; set; }
     public void Validate()
     {
-        if (Version != 1 || Shortcuts == null || Shortcuts.Count > 10000) throw new InvalidDataException("Cấu hình không được hỗ trợ.");
-        if (!Enum.IsDefined(Edge) || !double.IsFinite(Position) || Position < 0 || Position > 1 || !double.IsFinite(Opacity) || Opacity < .3 || Opacity > 1 || CollapseMilliseconds < 200 || CollapseMilliseconds > 5000) throw new InvalidDataException("Thiết lập dock không hợp lệ.");
-        if (Shortcuts.Any(s => s == null || s.Id == Guid.Empty || string.IsNullOrWhiteSpace(s.Name) || s.Path == null || s.Arguments == null || s.WorkingDirectory == null || s.Icon == null) || Shortcuts.Select(s => s.Id).Distinct().Count() != Shortcuts.Count) throw new InvalidDataException("Shortcut không hợp lệ.");
-        if (Shortcuts.Count(s => s.PinOrder.HasValue) > 5) throw new InvalidDataException("Chỉ được ghim tối đa 5 app.");
-        foreach (var s in Shortcuts) if (!s.Icon.StartsWith("builtin:") && (System.IO.Path.GetFileName(s.Icon) != s.Icon || s.Icon.Contains(':'))) throw new InvalidDataException("Đường dẫn icon không hợp lệ.");
+        if (Language is not ("en" or "vi")) Language = "vi";
+        if (Version != 1 || Shortcuts == null || Shortcuts.Count > 10000) throw new InvalidDataException(L10n.T("Cấu hình không được hỗ trợ."));
+        if (!Enum.IsDefined(Edge) || !double.IsFinite(Position) || Position < 0 || Position > 1 || !double.IsFinite(Opacity) || Opacity < .3 || Opacity > 1 || CollapseMilliseconds < 200 || CollapseMilliseconds > 5000) throw new InvalidDataException(L10n.T("Thiết lập dock không hợp lệ."));
+        if (Shortcuts.Any(s => s == null || s.Id == Guid.Empty || string.IsNullOrWhiteSpace(s.Name) || s.Path == null || s.Arguments == null || s.WorkingDirectory == null || s.Icon == null) || Shortcuts.Select(s => s.Id).Distinct().Count() != Shortcuts.Count) throw new InvalidDataException(L10n.T("Shortcut không hợp lệ."));
+        if (Shortcuts.Count(s => s.PinOrder.HasValue) > 5) throw new InvalidDataException(L10n.T("Chỉ được ghim tối đa 5 app."));
+        foreach (var s in Shortcuts) if (!s.Icon.StartsWith("builtin:") && (System.IO.Path.GetFileName(s.Icon) != s.Icon || s.Icon.Contains(':'))) throw new InvalidDataException(L10n.T("Đường dẫn icon không hợp lệ."));
     }
 }
 public static class Pins
@@ -48,7 +50,7 @@ public static class Pins
     public static void Toggle(Configuration config, Shortcut item)
     {
         if (item.PinOrder.HasValue) item.PinOrder = null;
-        else { if (config.Shortcuts.Count(s => s.PinOrder.HasValue) >= 5) throw new InvalidOperationException("Đã ghim 5 app. Hãy bỏ ghim một app trước."); item.PinOrder = 100; }
+        else { if (config.Shortcuts.Count(s => s.PinOrder.HasValue) >= 5) throw new InvalidOperationException(L10n.T("Đã ghim 5 app. Hãy bỏ ghim một app trước.")); item.PinOrder = 100; }
         Normalize(config);
     }
     public static void Normalize(Configuration config) { int n = 0; foreach (var s in config.Shortcuts.Where(s => s.PinOrder.HasValue).OrderBy(s => s.PinOrder)) s.PinOrder = n++; }

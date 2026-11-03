@@ -40,23 +40,8 @@ if (!$visualElementsNode) { throw 'Appx manifest is missing Applications/Applica
 $visualElementsNode.SetAttribute('DisplayName', $storeDisplayName)
 $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
 
-# Generate the app's simple four-button mark at the exact manifest sizes.
-Add-Type -AssemblyName System.Drawing
-$assets = Join-Path $stage 'Assets'
-New-Item -ItemType Directory -Path $assets | Out-Null
-foreach ($entry in @(@('StoreLogo.png',50),@('Square44x44Logo.png',44),@('Square150x150Logo.png',150))) {
-    $size = [int]$entry[1]
-    $bitmap = [Drawing.Bitmap]::new($size,$size)
-    $graphics = [Drawing.Graphics]::FromImage($bitmap)
-    $brush = [Drawing.SolidBrush]::new([Drawing.Color]::White)
-    try {
-        $graphics.Clear([Drawing.Color]::FromArgb(37,99,235))
-        foreach ($x in @(0.20,0.56)) { foreach ($y in @(0.20,0.56)) {
-            $graphics.FillRectangle($brush,[single]($size*$x),[single]($size*$y),[single]($size*0.24),[single]($size*0.24))
-        } }
-        $bitmap.Save((Join-Path $assets $entry[0]),[Drawing.Imaging.ImageFormat]::Png)
-    } finally { $brush.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }
-}
+# Use the same branded assets as the desktop application.
+Copy-Item -LiteralPath (Join-Path $repo 'packaging/Assets') -Destination (Join-Path $stage 'Assets') -Recurse
 $package = Join-Path $output "QuickActions_$($Version)_x64.msix"
 # Keep MakeAppx's schema/semantic validation enabled. Store signs the submitted package.
 & $makeAppx.FullName pack /d $stage /p $package /o

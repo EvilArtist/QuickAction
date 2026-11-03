@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QuickAction data and backup",
+  "type": "object",
+  "required": ["format", "schemaVersion", "configuration", "assets"],
+  "properties": {
+    "format": { "const": "quickaction" },
+    "schemaVersion": { "const": 1 },
+    "configuration": {
+      "type": "object",
+      "properties": {
+        "version": { "const": 1 },
+        "language": { "enum": ["vi", "en"] },
+        "monitor": { "type": "string" },
+        "edge": { "enum": ["Left", "Right", "Top", "Bottom"] },
+        "position": { "type": "number", "minimum": 0, "maximum": 1 },
+        "opacity": { "type": "number", "minimum": 0.3, "maximum": 1 },
+        "collapseMilliseconds": { "type": "integer", "minimum": 200, "maximum": 5000 },
+        "topmost": { "type": "boolean" },
+        "startup": { "type": "boolean" },
+        "shortcuts": {
+          "type": "array", "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "name": { "type": "string", "minLength": 1 },
+              "path": { "type": "string" },
+              "arguments": { "type": "string" },
+              "workingDirectory": { "type": "string" },
+              "icon": { "type": "string" },
+              "admin": { "type": "boolean" },
+              "pinOrder": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "description": "Backup: icon filename to base64 bytes. Local config: empty; files live in icons/.",
+      "type": "object",
+      "additionalProperties": { "type": "string", "contentEncoding": "base64" }
+    }
+  }
+}

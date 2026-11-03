@@ -26,6 +26,7 @@ public sealed class DockWindow : Window
     private readonly DispatcherTimer collapse=new();
     private readonly DispatcherTimer animation=new(DispatcherPriority.Render) { Interval=TimeSpan.FromMilliseconds(16) };
     private readonly Forms.NotifyIcon tray;
+    private readonly System.Drawing.Icon trayIcon;
     private bool expanded,all,dragging,placing,suppressShortcutClick;
     private readonly Stopwatch resizeClock=new();
     private bool hasPlacement,resizing;
@@ -54,8 +55,10 @@ public sealed class DockWindow : Window
         // through one rounded clip; accent blur ignores a layered HWND's region.
         AllowsTransparency=true;
         Width=10; Height=100;
-        tray=new Forms.NotifyIcon { Icon=System.Drawing.SystemIcons.Application,Text="QuickAction",Visible=true };
-        var menu=new Forms.ContextMenuStrip(); menu.Items.Add("Hiện / ẩn dock",null,(_,_)=>Dispatcher.Invoke(()=> { if(IsVisible) Hide(); else { Show(); Render(); } })); menu.Items.Add("Settings",null,(_,_)=>Dispatcher.Invoke(()=>OpenSettings())); menu.Items.Add("Thoát",null,(_,_)=>Dispatcher.Invoke(()=>Application.Current.Shutdown())); tray.ContextMenuStrip=menu;
+        using (var iconStream=Application.GetResourceStream(new Uri("pack://application:,,,/QuickAction;component/Icon/QuickAction.ico")).Stream)
+        using (var icon=new System.Drawing.Icon(iconStream)) trayIcon=(System.Drawing.Icon)icon.Clone();
+        tray=new Forms.NotifyIcon { Icon=trayIcon,Text="QuickAction",Visible=true };
+        var menu=new Forms.ContextMenuStrip(); menu.Items.Add(L10n.T("Hiện / ẩn dock"),null,(_,_)=>Dispatcher.Invoke(()=> { if(IsVisible) Hide(); else { Show(); Render(); } })); menu.Items.Add(L10n.T("Settings"),null,(_,_)=>Dispatcher.Invoke(()=>OpenSettings())); menu.Items.Add(L10n.T("Thoát"),null,(_,_)=>Dispatcher.Invoke(()=>Application.Current.Shutdown())); tray.ContextMenuStrip=menu;
         tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(()=> { Show(); OpenAll(); Activate(); });
         vm.Notification+=Notify; vm.Updated+=Refresh;
         animation.Tick+=ResizeFrame;
@@ -74,12 +77,12 @@ public sealed class DockWindow : Window
             HwndSource.FromHwnd(hwnd).AddHook(Hook);
             try { compositorBackdrop=new CompositorBackdrop(hwnd); }
             catch(Exception e) when(e is System.Runtime.InteropServices.ExternalException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException) { /* Use the opaque WPF fallback. */ }
-            Render(); if(vm.Store.RecoveryMessage!=null) Notify(vm.Store.RecoveryMessage);
+            Render(); if(vm.Store.RecoveryMessage!=null) Notify(L10n.T(vm.Store.RecoveryMessage));
         };
         SystemEvents.DisplaySettingsChanged+=DisplayChanged;
         SystemEvents.UserPreferenceChanged+=PreferencesChanged;
         IsVisibleChanged+=(_,_)=> { if(!IsVisible) { StopResize(); hover.Stop(); collapse.Stop(); hasPlacement=false; } else if(!hasPlacement) Dispatcher.BeginInvoke(Render); };
-        Closed+=(_,_)=> { StopResize(); hover.Stop(); collapse.Stop(); compositorBackdrop?.Dispose(); tray.Dispose(); vm.Notification-=Notify; vm.Updated-=Refresh; SystemEvents.DisplaySettingsChanged-=DisplayChanged; SystemEvents.UserPreferenceChanged-=PreferencesChanged; };
+        Closed+=(_,_)=> { StopResize(); hover.Stop(); collapse.Stop(); compositorBackdrop?.Dispose(); tray.Dispose(); trayIcon.Dispose(); vm.Notification-=Notify; vm.Updated-=Refresh; SystemEvents.DisplaySettingsChanged-=DisplayChanged; SystemEvents.UserPreferenceChanged-=PreferencesChanged; };
     }
     private void PreferencesChanged(object sender,UserPreferenceChangedEventArgs e)=>Dispatcher.BeginInvoke(Render);
     private void DisplayChanged(object? sender,EventArgs e)=>Dispatcher.BeginInvoke(()=> { if(!Forms.Screen.AllScreens.Any(s=>s.DeviceName==vm.Config.Monitor)) { vm.Config.Monitor=Forms.Screen.PrimaryScreen!.DeviceName; vm.Guard(vm.Save); } Render(); });
@@ -89,7 +92,17 @@ public sealed class DockWindow : Window
         if(message==0x02E0&&!placing) Dispatcher.BeginInvoke(Render);
         return IntPtr.Zero;
     }
-    private void Refresh() { if(!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(Refresh); return; } Render(); }
+    private void Refresh()
+    {
+        if(!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(Refresh); return; }
+        if(tray.ContextMenuStrip is { } menu)
+        {
+            menu.Items[0].Text=L10n.T("Hiện / ẩn dock");
+            menu.Items[1].Text=L10n.T("Settings");
+            menu.Items[2].Text=L10n.T("Thoát");
+        }
+        Render();
+    }
     private void Notify(string message)
     {
         if(!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(()=>Notify(message)); return; }
@@ -165,7 +178,7 @@ public sealed class DockWindow : Window
         var root=new DockPanel { Margin=new(5),LastChildFill=true };
         var strip=new Grid();
         for(int i=0;i<3;i++) { var size=i==1?new GridLength(1,GridUnitType.Star):GridLength.Auto; if(Vertical) strip.RowDefinitions.Add(new(){Height=size}); else strip.ColumnDefinitions.Add(new(){Width=size}); }
-        strip.Children.Add(DockButton("\uE713",()=>OpenSettings(),"Settings"));
+        strip.Children.Add(DockButton("\uE713",()=>OpenSettings(),L10n.T("Settings")));
         var pins=new StackPanel { Orientation=Vertical?Orientation.Vertical:Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center };
         if(Vertical) Grid.SetRow(pins,1); else Grid.SetColumn(pins,1); strip.Children.Add(pins);
         foreach(var item in vm.Pinned)
@@ -174,19 +187,19 @@ public sealed class DockWindow : Window
             b.Drop+=(_,e)=> { if(e.Data.GetData("QuickAction.Pin") is Guid source) { vm.Reorder(source,item.Id); e.Handled=true; } };
             pins.Children.Add(b);
         }
-        var allButton=DockButton("\uE71D",()=> { ChangeState(true,!all); if(all) Activate(); },"Tất cả ứng dụng");
+        var allButton=DockButton("\uE71D",()=> { ChangeState(true,!all); if(all) Activate(); },L10n.T("Tất cả ứng dụng"));
         if(Vertical) Grid.SetRow(allButton,2); else Grid.SetColumn(allButton,2); strip.Children.Add(allButton);
         DockPanel.SetDock(strip,vm.Config.Edge switch { Edge.Right=>Dock.Right,Edge.Bottom=>Dock.Bottom,Edge.Top=>Dock.Top,_=>Dock.Left }); root.Children.Add(strip);
         if(all)
         {
-            var content=new DockPanel { Margin=new(12) };
-            var header=new StackPanel(); header.Children.Add(Ui.Text("Ứng dụng của bạn",22));
-            var searchBox=new TextBox { Text=search,ToolTip="Tìm theo tên, chương trình hoặc parameters" }; System.Windows.Automation.AutomationProperties.SetName(searchBox,"Tìm shortcut"); searchBox.TextChanged+=(_,_)=> { search=searchBox.Text; FillRows(); }; header.Children.Add(searchBox);
-            DockPanel.SetDock(header,Dock.Top); content.Children.Add(header); rows=new StackPanel(); content.Children.Add(new ScrollViewer { Content=rows,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled }); root.Children.Add(content); FillRows();
+            var content=new DockPanel { Margin=new(24,20,16,16),Background=Brushes.Transparent };
+            var header=new StackPanel(); header.Children.Add(Ui.Text(L10n.T("Ứng dụng của bạn")+"   "+vm.Items.Count()+" shortcut",26));
+            var searchBox=new TextBox { Text=search,Height=44,Margin=new(0,12,0,20),Padding=new(14,8,14,8),ToolTip=L10n.T("Tìm theo tên, chương trình hoặc parameters") }; System.Windows.Automation.AutomationProperties.SetName(searchBox,L10n.T("Tìm shortcut")); searchBox.TextChanged+=(_,_)=> { search=searchBox.Text; FillRows(); }; header.Children.Add(searchBox);
+            DockPanel.SetDock(header,Dock.Top); content.Children.Add(header); rows=new StackPanel(); var scroll=new ScrollViewer { Content=rows,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled }; scroll.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)]=FindResource("AllApps.ScrollBar"); content.Children.Add(scroll); root.Children.Add(content); FillRows();
         }
         surface.Child=root;
         var count=vm.Pinned.Count()+2;
-        Place(all?650:Vertical?62:count*52+10,all?Math.Max(440,Vertical?count*52+10:440):Vertical?count*52+10:62);
+        Place(all?850:Vertical?62:count*52+10,all?Math.Max(560,Vertical?count*52+10:560):Vertical?count*52+10:62);
         if(SystemParameters.ClientAreaAnimation) { root.BeginAnimation(OpacityProperty,new DoubleAnimation(.65,1,TimeSpan.FromMilliseconds(ResizeDurationMilliseconds))); }
     }
     private void FillRows()
@@ -194,14 +207,16 @@ public sealed class DockWindow : Window
         if(rows==null) return; rows.Children.Clear();
         foreach(var item in vm.Items.Where(s=>(s.Name+" "+s.Path+" "+s.Arguments).Contains(search,StringComparison.CurrentCultureIgnoreCase)))
         {
-            var grid=new Grid { Margin=new(0,5,0,8) }; grid.ColumnDefinitions.Add(new(){ Width=new(42) }); grid.ColumnDefinitions.Add(new(){ Width=new(1,GridUnitType.Star) }); grid.ColumnDefinitions.Add(new(){ Width=GridLength.Auto });
+            var grid=new Grid { Margin=new(14,16,14,16) }; grid.ColumnDefinitions.Add(new(){ Width=new(52) }); grid.ColumnDefinitions.Add(new(){ Width=new(1,GridUnitType.Star) }); grid.ColumnDefinitions.Add(new(){ Width=GridLength.Auto });
             var icon=Ui.Icon(item,vm); grid.Children.Add(icon);
-            var detail=new StackPanel { Margin=new(6,0,8,0) }; detail.Children.Add(Ui.Text(item.Name,17)); detail.Children.Add(Ui.Text(item.Path,11,Brushes.DimGray)); detail.Children.Add(Ui.Text(item.Arguments,12,Brushes.DimGray)); Grid.SetColumn(detail,1); grid.Children.Add(detail);
-            var actions=new StackPanel(); var admin=new CheckBox { Content="Admin",IsChecked=item.Admin,ToolTip="Quyền admin mặc định" }; admin.Click+=(_,_)=> { item.Admin=admin.IsChecked==true; vm.Guard(vm.Save); }; actions.Children.Add(admin);
-            actions.Children.Add(Ui.Button("▶ Run",()=>_ = vm.Run(item),"Chạy "+item.Name)); actions.Children.Add(Ui.Button(item.PinOrder.HasValue?"Bỏ ghim":"Ghim",()=>vm.TogglePin(item))); Grid.SetColumn(actions,2); grid.Children.Add(actions);
-            rows.Children.Add(new Border { Child=grid,BorderBrush=new SolidColorBrush(Color.FromRgb(225,231,242)),BorderThickness=new(0,0,0,1) });
+            var detail=new StackPanel { Margin=new(6,0,8,0) }; detail.Children.Add(Ui.Text(item.Name,17)); 
+            var path=Ui.Text(item.Path,13,Brushes.SlateGray); path.TextWrapping=TextWrapping.NoWrap; 
+            path.TextTrimming=TextTrimming.CharacterEllipsis; path.ToolTip=item.Path; detail.Children.Add(path); Grid.SetColumn(detail,1); grid.Children.Add(detail);
+            var actions=new StackPanel { Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center }; var admin=Ui.Button("♢ Admin",()=> { item.Admin=!item.Admin; vm.Guard(vm.Save); },L10n.T("Quyền admin mặc định")); admin.Foreground=item.Admin?Brushes.RoyalBlue:Brushes.SlateGray; admin.Background=item.Admin?Brushes.Lavender:Brushes.Transparent; actions.Children.Add(admin);
+            var run=Ui.Button(L10n.T("▶ Run"),()=>_ = vm.Run(item),L10n.T("Chạy ")+item.Name); run.Background=Brushes.RoyalBlue; run.Foreground=Brushes.White; run.Margin=new(12,0,12,0); actions.Children.Add(run); var pin=Ui.Button(item.PinOrder.HasValue?"\uE77A":"\uE718",()=>vm.TogglePin(item),item.PinOrder.HasValue?L10n.T("Bỏ ghim"):L10n.T("Ghim")); pin.FontFamily=new FontFamily("Segoe Fluent Icons"); pin.Background=Brushes.Transparent; pin.BorderThickness=new(0); pin.Padding=new(8,0,8,0); actions.Children.Add(pin); Grid.SetColumn(actions,2); grid.Children.Add(actions);
+            rows.Children.Add(new Border { Child=grid,BorderBrush=new SolidColorBrush(Color.FromRgb(225,231,242)),CornerRadius=new(14),Margin=new(0,0,8,8),BorderThickness=new(1) });
         }
-        if(rows.Children.Count==0) rows.Children.Add(Ui.Text("Chưa có shortcut phù hợp. Mở Settings hoặc kéo file vào dock để thêm.",14,Brushes.DimGray));
+        if(rows.Children.Count==0) rows.Children.Add(Ui.Text(L10n.T("Chưa có shortcut phù hợp. Mở Settings hoặc kéo file vào dock để thêm."),14,Brushes.DimGray));
     }
     private void Place(double width,double height)
     {
@@ -302,3 +317,6 @@ public sealed class DockWindow : Window
         finally { placing=false; }
     }
 }
+
+
+

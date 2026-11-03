@@ -20,7 +20,9 @@ internal static class Program
         var root=Path.Combine(Path.GetTempPath(),"QuickAction-visual-"+Guid.NewGuid().ToString("N"));
         // Use a plain test host: App.OnStartup would run the production
         // single-instance handshake and could close this harness during Pump.
-        var app=new Application { ShutdownMode=ShutdownMode.OnExplicitShutdown };
+        var app=new App { ShutdownMode=ShutdownMode.OnExplicitShutdown };
+        app.InitializeComponent(); // Load production resources without calling Run/OnStartup.
+        if(app.TryFindResource("AllApps.ScrollBar") is not Style) throw new Exception("All Apps scrollbar resource is missing from application scope.");
         DockWindow? dock=null;
         try
         {
@@ -144,4 +146,7 @@ internal static class Program
         timer.Start(); try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
     }
 }
+
+
+
 

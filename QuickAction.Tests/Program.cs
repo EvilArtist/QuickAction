@@ -11,6 +11,22 @@ void Throws(Action action,string name) { try { action(); } catch { Check(true,na
 var root=Path.Combine(Path.GetTempPath(),"QuickAction-tests-"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
 try
 {
+    Check(JsonSerializer.Deserialize<Configuration>("{}")!.Language=="vi","Legacy configurations default to Vietnamese");
+    var languageStore=new ConfigurationStore(Path.Combine(root,"language"));
+    foreach(var language in new[]{"en","vi"})
+    {
+        var localized=new Configuration { Language=language };
+        languageStore.Save(localized);
+        Check(languageStore.Load().Language==language,"Language persists: "+language);
+        var languageZip=Path.Combine(root,language+".json"); languageStore.Export(localized,languageZip);
+        Check(languageStore.Import(languageZip).Language==language,"Backup preserves language: "+language);
+    }
+    var unknownLanguage=new Configuration { Language="fr" }; unknownLanguage.Validate();
+    Check(unknownLanguage.Language=="vi","Unknown language falls back to Vietnamese");
+    L10n.Language="en";
+    Check(L10n.T("Lưu shortcut")=="Save shortcut","English translation");
+    L10n.Language="vi";
+    Check(L10n.T("Lưu shortcut")=="Lưu shortcut","Vietnamese translation");
     var file=Path.Combine(root,"Ứng dụng có dấu.exe"); var item=new Shortcut { Name="Demo",Path=file,Arguments="--name \"Nguyễn Văn A\"",Admin=true };
     var exe=LaunchBuilder.Build(item,root); Check(exe.FileName==file && exe.Arguments==item.Arguments && exe.WorkingDirectory==root && exe.Admin,"EXE: Unicode, spaces, arguments, admin, default working directory");
     Check(LaunchBuilder.StartInfo(exe).Verb=="runas" && LaunchBuilder.StartInfo(exe).UseShellExecute,"Elevation uses runas");
@@ -36,13 +52,31 @@ try
     Check(store.Load().Position==.25 && File.Exists(store.FilePath+".bak"),"Atomic save and backup");
     File.WriteAllText(store.FilePath,"{broken"); var recovered=store.Load(); Check(recovered.Position==.5 && store.RecoveryMessage!=null,"Recover corrupted JSON");
     var icon=Path.Combine(root,"sample.png"); File.WriteAllBytes(icon,[137,80,78,71]); config.Shortcuts[0].Icon=store.ImportIcon(icon);
-    var archive=Path.Combine(root,"backup.zip"); store.Export(config,archive); var imported=store.Import(archive); Check(imported.Shortcuts.Count==6 && File.Exists(Path.Combine(store.Icons,imported.Shortcuts[0].Icon)),"Backup restores shortcuts and icons");
+    var archive=Path.Combine(root,"backup.json"); store.Export(config,archive); var imported=store.Import(archive); Check(imported.Shortcuts.Count==6 && File.Exists(Path.Combine(store.Icons,imported.Shortcuts[0].Icon)),"Backup restores shortcuts and icons");
     Check(imported.Shortcuts[0].Icon!=config.Shortcuts[0].Icon,"Import keeps old assets intact");
     var hostile=Path.Combine(root,"hostile.zip"); using(var zip=ZipFile.Open(hostile,ZipArchiveMode.Create)) { zip.CreateEntry("../outside.txt"); }
     Throws(()=>store.Import(hostile),"Reject ZIP traversal");
     var before=File.ReadAllText(store.FilePath); var invalid=Path.Combine(root,"invalid.zip"); using(var zip=ZipFile.Open(invalid,ZipArchiveMode.Create)) { using var w=new StreamWriter(zip.CreateEntry("config.json").Open()); w.Write("{\"Version\":999}"); }
     Throws(()=>store.Import(invalid),"Reject future config version"); Check(before==File.ReadAllText(store.FilePath),"Invalid import preserves current configuration");
-    var a=new Area(-1920,-200,1920,1080); Check(DockGeometry.Nearest(a,-1919,300)==Edge.Left,"Negative monitor coordinates");
+    using(var saved=JsonDocument.Parse(File.ReadAllText(store.FilePath)))
+        Check(saved.RootElement.GetProperty("schemaVersion").GetInt32()==1 && saved.RootElement.GetProperty("configuration").GetProperty("edge").GetString()=="Left","Current storage uses versioned JSON schema");
+    var legacyStore=new ConfigurationStore(Path.Combine(root,"legacy"));
+    File.WriteAllText(legacyStore.FilePath,JsonSerializer.Serialize(new Configuration { Position=.75 }));
+    var legacy=legacyStore.Load(); legacyStore.Save(legacy);
+    Check(legacyStore.Load().Position==.75 && File.ReadAllText(legacyStore.FilePath).Contains("schemaVersion"),"Legacy data migrates without loss on save");
+    var badJson=Path.Combine(root,"bad.json");
+    File.WriteAllText(badJson,File.ReadAllText(archive).Replace("\"schemaVersion\": 1","\"schemaVersion\": 999"));
+    Throws(()=>store.Import(badJson),"Reject future JSON schema");
+    Check(before==File.ReadAllText(store.FilePath),"Invalid JSON preserves current data");
+    using(var backup=JsonDocument.Parse(File.ReadAllText(archive)))
+        Check(backup.RootElement.GetProperty("assets").EnumerateObject().Count()==1,"JSON backup embeds custom icons");    var missingAssets=Path.Combine(root,"missing-assets.json");
+    var node=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(archive))!;
+    node["assets"]=new System.Text.Json.Nodes.JsonObject(); File.WriteAllText(missingAssets,node.ToJsonString());
+    Throws(()=>store.Import(missingAssets),"Reject missing JSON icon before changing data");
+    Check(before==File.ReadAllText(store.FilePath),"Missing assets preserve current configuration");
+    var oldZip=Path.Combine(root,"legacy-backup.zip");
+    using(var zip=ZipFile.Open(oldZip,ZipArchiveMode.Create)) { using var w=new StreamWriter(zip.CreateEntry("config.json").Open()); w.Write(JsonSerializer.Serialize(new Configuration { Position=.9 })); }
+    Check(store.Import(oldZip).Position==.9,"Legacy ZIP backup remains importable");    var a=new Area(-1920,-200,1920,1080); Check(DockGeometry.Nearest(a,-1919,300)==Edge.Left,"Negative monitor coordinates");
     foreach(var edge in Enum.GetValues<Edge>()) { var p=DockGeometry.Place(a,edge,.5,650,440); Check(p.X>=a.X && p.Y>=a.Y && p.X+650<=a.X+a.Width && p.Y+440<=a.Y+a.Height,"Dock inside work area: "+edge); }
     var physical=DockGeometry.Place(new(0,0,3840,2160),Edge.Right,.5,650*1.5,440*1.5); Check(physical.X==2865 && physical.Y==750,"Placement with 150% pixel dimensions");
     var tiny=DockGeometry.Place(new(0,0,100,100),Edge.Bottom,.5,200,200); Check(tiny==(0d,0d),"Oversized panel anchor clamped");
@@ -61,3 +95,5 @@ try
     Console.WriteLine($"\n{passed} tests passed.");
 }
 finally { Directory.Delete(root,true); }
+
+
