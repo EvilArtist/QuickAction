@@ -1,4 +1,4 @@
-using QuickAction.Core;
+﻿using QuickAction.Core;
 using Microsoft.Win32;
 using System;
 using System.IO;
@@ -23,8 +23,7 @@ public sealed partial class SettingsWindow : Window
     private readonly System.Windows.Data.CollectionViewSource shortcutSource = new();
     private Guid? editing;
     private string icon="builtin:auto";
-    private bool dirty,loading,changingSelection;
-    private Shortcut? previous;
+    private bool dirty,loading;
     private string displayedLanguage;
     private TabControl tabs => Pages;
     public SettingsWindow(MainViewModel model)
@@ -33,13 +32,13 @@ public sealed partial class SettingsWindow : Window
         PreferencesHost.Content=BuildPreferences(); BackupHost.Content=BuildBackup();
         shortcutSource.Source=vm.Items;
         shortcutSource.Filter+=(_,e)=>e.Accepted=e.Item is Shortcut item &&
-            (item.Name.Contains(SearchBox.Text,StringComparison.OrdinalIgnoreCase) || item.Path.Contains(SearchBox.Text,StringComparison.OrdinalIgnoreCase));
-        list.ItemsSource=shortcutSource.View; list.SelectionChanged+=SelectionChanged;
+            (item.Name.Contains(SearchBox.Text,StringComparison.OrdinalIgnoreCase) || item.Path.Contains(SearchBox.Text,StringComparison.OrdinalIgnoreCase) || item.Arguments.Contains(SearchBox.Text,StringComparison.OrdinalIgnoreCase));
+        list.ItemsSource=shortcutSource.View;
         SearchBox.TextChanged+=(_,_)=> {
             // Filtering must not discard an unsaved editor.
-            changingSelection=true; shortcutSource.View.Refresh(); changingSelection=false; UpdateEmptyState();
+            shortcutSource.View.Refresh(); UpdateEmptyState();
         };
-        AddShortcutButton.Click+=(_,_)=> { if(CanDiscard()) { SearchBox.Clear(); changingSelection=true; list.SelectedItem=null; changingSelection=false; previous=null; Load(null); } };
+        AddShortcutButton.Click+=(_,_)=> { if(CanDiscard()) { SearchBox.Clear(); list.SelectedItem=null; Load(null); ShowDetails(); } };
         BrowsePathButton.Click+=(_,_)=> { var dialog=new OpenFileDialog { Filter=L10n.T("Chương trình|*.exe;*.bat;*.cmd;*.ps1;*.msi") }; if(dialog.ShowDialog(this)==true) { path.Text=dialog.FileName; if(string.IsNullOrWhiteSpace(name.Text)) name.Text=Path.GetFileNameWithoutExtension(dialog.FileName); } };
         BrowseWorkDirButton.Click+=(_,_)=> { var dialog=new OpenFolderDialog(); if(dialog.ShowDialog(this)==true) work.Text=dialog.FolderName; };
         ChooseInstalledAppButton.Click+=(_,_)=>vm.Guard(()=>
@@ -60,17 +59,19 @@ public sealed partial class SettingsWindow : Window
             }
         });
         BrowseIconButton.Click+=(_,_)=>vm.Guard(()=> { var dialog=new OpenFileDialog { Filter="Icon|*.ico;*.png;*.jpg;*.jpeg" }; if(dialog.ShowDialog(this)==true) { icon=vm.Store.ImportIcon(dialog.FileName); icons.SelectedIndex=6; iconStatus.Text=Path.GetFileName(dialog.FileName); iconStatus.Visibility=Visibility.Visible; dirty=true; } });
+        BackButton.Content="← "+L10n.T("Quay lại");
+        BackButton.Click+=(_,_)=> { if(CanDiscard()) ShowList(); };
         SaveButton.Click+=(_,_)=>vm.Guard(SaveItem);
         RunButton.Click+=(_,_)=>vm.Guard(()=>_ = vm.Run(ReadForm()));
         PinButton.Click+=(_,_)=> { if(editing.HasValue) { var item=vm.Items.FirstOrDefault(s=>s.Id==editing); if(item!=null) vm.TogglePin(item); } else MessageBox.Show(this,L10n.T("Lưu shortcut trước khi ghim."),"QuickAction"); };
         DeleteButton.Click+=(_,_)=>Delete();
         var menu=new ContextMenu(); var duplicate=new MenuItem { Header=L10n.T("Nhân bản shortcut") };
-        duplicate.Click+=(_,_)=> { if(CanDiscard() && list.SelectedItem is Shortcut item) { Load(item); editing=null; name.Text=item.Name+L10n.T(" — bản sao"); dirty=true; } };
+        duplicate.Click+=(_,_)=> { if(CanDiscard() && list.SelectedItem is Shortcut item) { Load(item); editing=null; name.Text=item.Name+L10n.T(" — bản sao"); dirty=true; ShowDetails(); } };
         menu.Items.Add(duplicate); list.ContextMenu=menu;
         foreach(var (box,label) in new[]{(name,L10n.T("Tên shortcut")),(path,L10n.T("Đường dẫn chương trình")),(arguments,L10n.T("Tham số")),(work,L10n.T("Thư mục làm việc")),(SearchBox,L10n.T("Tìm shortcut"))}) System.Windows.Automation.AutomationProperties.SetName(box,label);
         foreach(var box in new[]{name,path,arguments,work}) box.TextChanged+=(_,_)=> { if(!loading) dirty=true; };
         admin.Click+=(_,_)=>dirty=true;
-        icons.SelectionChanged+=(_,_)=> { if(!loading) dirty=true; };
+        icons.SelectionChanged+=(_,_)=> { iconStatus.Visibility=icons.SelectedIndex==6 && !icon.StartsWith("builtin:")?Visibility.Visible:Visibility.Collapsed; if(!loading) dirty=true; };
         vm.Updated+=RefreshList;
         AllowDrop=true; DragOver+=(_,e)=> { e.Effects=e.Data.GetDataPresent(DataFormats.FileDrop)?DragDropEffects.Copy:DragDropEffects.None; e.Handled=true; };
         Drop+=(_,e)=> { if(e.Data.GetData(DataFormats.FileDrop) is string[] files) foreach(var f in files.Where(LaunchBuilder.Supported)) AddFile(f); e.Handled=true; };
@@ -82,28 +83,46 @@ public sealed partial class SettingsWindow : Window
         if(displayedLanguage!=vm.Config.Language)
         {
             displayedLanguage=vm.Config.Language;
+            BackButton.Content="← "+L10n.T("Quay lại");
             PreferencesHost.Content=BuildPreferences(); BackupHost.Content=BuildBackup();
             ((MenuItem)list.ContextMenu.Items[0]).Header=L10n.T("Nhân bản shortcut");
             foreach(var (box,label) in new[]{(name,"Tên shortcut"),(path,"Đường dẫn chương trình"),(arguments,"Tham số"),(work,"Thư mục làm việc"),(SearchBox,"Tìm shortcut")})
                 System.Windows.Automation.AutomationProperties.SetName(box,L10n.T(label));
         }
-        changingSelection=true; shortcutSource.View.Refresh(); changingSelection=false; UpdateEmptyState();
+        shortcutSource.View.Refresh(); UpdateEmptyState();
     }
     private void UpdateEmptyState()
     {
         EmptyState.Visibility=list.Items.IsEmpty?Visibility.Visible:Visibility.Collapsed;
         EmptyTitle.Text=vm.Items.Count==0?L10n.T("Chưa có shortcut nào"):L10n.T("Không tìm thấy shortcut");
     }
-    private void ShortcutIconLoaded(object sender,RoutedEventArgs e)
+    private void ShortcutRowLoaded(object sender,RoutedEventArgs e)
     {
-        if(sender is ContentControl control && control.DataContext is Shortcut item) control.Content=Ui.Icon(item,vm);
+        if(sender is ContentControl control && control.DataContext is Shortcut item) control.Content=Ui.AppRow(item,vm,()=>OpenDetails(item));
+    }
+    private void ShortcutRowDataContextChanged(object sender,DependencyPropertyChangedEventArgs e)
+    {
+        if(sender is ContentControl control) control.Content=e.NewValue is Shortcut item?Ui.AppRow(item,vm,()=>OpenDetails(item)):null;
+    }
+    private void ShowDetails()
+    {
+        ShortcutListPage.Visibility=Visibility.Collapsed;
+        ShortcutDetailsPage.Visibility=Visibility.Visible;
+        name.Focus();
+    }
+    private void ShowList()
+    {
+        list.SelectedItem=null;
+        Load(null);
+        ShortcutDetailsPage.Visibility=Visibility.Collapsed;
+        ShortcutListPage.Visibility=Visibility.Visible;
+        SearchBox.Focus();
     }
     private bool CanDiscard()=>!dirty||MessageBox.Show(this,L10n.T("Bỏ các thay đổi chưa lưu?"),"QuickAction",MessageBoxButton.YesNo,MessageBoxImage.Question)==MessageBoxResult.Yes;
-    private void SelectionChanged(object sender,SelectionChangedEventArgs e)
+    private void OpenDetails(Shortcut item)
     {
-        if(changingSelection) return;
-        if(!CanDiscard()) { changingSelection=true; list.SelectedItem=previous; changingSelection=false; return; }
-        previous=list.SelectedItem as Shortcut; Load(previous);
+        if(!CanDiscard()) return;
+        list.SelectedItem=item; Load(item); ShowDetails();
     }
     private void Load(Shortcut? item)
     {
@@ -114,7 +133,7 @@ public sealed partial class SettingsWindow : Window
     }
     public void AddFile(string file)
     {
-        if(!CanDiscard()) return; tabs.SelectedIndex=0; changingSelection=true; list.SelectedItem=null; changingSelection=false; previous=null; Load(null); path.Text=file; name.Text=Path.GetFileNameWithoutExtension(file); dirty=true;
+        if(!CanDiscard()) return; tabs.SelectedIndex=0; list.SelectedItem=null; Load(null); path.Text=file; name.Text=Path.GetFileNameWithoutExtension(file); dirty=true; ShowDetails();
     }
     private Shortcut ReadForm()
     {
@@ -127,24 +146,26 @@ public sealed partial class SettingsWindow : Window
     private void SaveItem()
     {
         var item=ReadForm(); var old=vm.Items.FirstOrDefault(s=>s.Id==item.Id);
-        changingSelection=true; if(old!=null) vm.Items[vm.Items.IndexOf(old)]=item; else vm.Items.Add(item); changingSelection=false;
-        vm.Save(); dirty=false; SearchBox.Clear(); list.SelectedItem=item; previous=item; Load(item);
+        if(old!=null) vm.Items[vm.Items.IndexOf(old)]=item; else vm.Items.Add(item);
+        vm.Save(); dirty=false; SearchBox.Clear(); list.SelectedItem=item; Load(item);
     }
     private void Delete()
     {
         var item=vm.Items.FirstOrDefault(s=>s.Id==editing); if(item==null) return;
         if(MessageBox.Show(this,L10n.T("Xóa shortcut “")+item.Name+L10n.T("”? File chương trình vẫn được giữ nguyên."),"QuickAction",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes) return;
-        vm.Guard(()=> { dirty=false; vm.Items.Remove(item); vm.Config.Shortcuts=vm.Items.ToList(); Pins.Normalize(vm.Config); vm.Save(); Load(null); });
+        vm.Guard(()=> { dirty=false; vm.Items.Remove(item); vm.Config.Shortcuts=vm.Items.ToList(); Pins.Normalize(vm.Config); vm.Save(); ShowList(); });
     }
     private UIElement BuildPreferences()
     {
         var panel=new StackPanel(); panel.Children.Add(new TextBlock { Text=L10n.T("Dock & hệ thống"),Style=(Style)FindResource("TextBlock.SectionTitle") });
         Ui.Label(panel,L10n.T("Ngôn ngữ / Language"));
-        var language=new ComboBox { Name="LanguageCombo",ItemsSource=new[]{"English","Tiếng Việt"},SelectedIndex=vm.Config.Language=="en"?0:1,Margin=new(0,5,0,16) };
+        var language=new Controls.SegmentedButtonGroup { Name="LanguageGroup",ItemsSource=new[]{"English","Tiếng Việt"},SelectedIndex=vm.Config.Language=="en"?0:1,Margin=new(0,5,0,16) };
         System.Windows.Automation.AutomationProperties.SetName(language,"Language / Ngôn ngữ"); panel.Children.Add(language);
         Ui.Label(panel,L10n.T("Màn hình"));
-        var monitor=new ComboBox { ItemsSource=Forms.Screen.AllScreens.Select(s=>s.DeviceName).ToArray(),SelectedItem=WindowsServices.Screen(vm.Config).DeviceName,Margin=new(0,5,0,16) }; panel.Children.Add(monitor);
-        Ui.Label(panel,L10n.T("Cạnh ghim")); var edge=new ComboBox { ItemsSource=new[]{L10n.T("Trái"),L10n.T("Phải"),L10n.T("Trên"),L10n.T("Dưới")},SelectedIndex=(int)vm.Config.Edge,Margin=new(0,5,0,16) }; panel.Children.Add(edge);
+        var monitor=new Controls.SegmentedButtonGroup { Name="MonitorGroup",ItemsSource=Forms.Screen.AllScreens.Select(s=>s.DeviceName).ToArray(),SelectedItem=WindowsServices.Screen(vm.Config).DeviceName,Margin=new(0,5,0,16) }; panel.Children.Add(monitor);
+        System.Windows.Automation.AutomationProperties.SetName(monitor,L10n.T("Màn hình"));
+        Ui.Label(panel,L10n.T("Cạnh ghim")); var edge=new Controls.SegmentedButtonGroup { ItemsSource=new[]{L10n.T("Trái"),L10n.T("Phải"),L10n.T("Trên"),L10n.T("Dưới")},SelectedIndex=(int)vm.Config.Edge,Margin=new(0,5,0,16) }; panel.Children.Add(edge);
+        System.Windows.Automation.AutomationProperties.SetName(edge,L10n.T("Cạnh ghim"));
         var topmost=new CheckBox { Margin=new(0,8,0,12),Content=L10n.T("Luôn nổi trên các cửa sổ khác"),IsChecked=vm.Config.Topmost }; panel.Children.Add(topmost);
         var startup=new CheckBox { Margin=new(0,0,0,16),Content=L10n.T("Khởi động cùng Windows"),IsChecked=vm.Config.Startup }; panel.Children.Add(startup);
         Ui.Label(panel,L10n.T("Độ đục nền (30–100%)")); var opacity=new Slider { Minimum=.3,Maximum=1,Value=vm.Config.Opacity,TickFrequency=.1,Margin=new(0,8,0,18) }; panel.Children.Add(opacity);
@@ -189,7 +210,7 @@ public sealed partial class SettingsWindow : Window
         {
             var dialog=new OpenFileDialog { Filter="QuickAction JSON backup|*.json|Legacy ZIP backup|*.zip" }; if(dialog.ShowDialog(this)!=true||!CanDiscard()) return;
             if(MessageBox.Show(this,L10n.T("Thay thế toàn bộ shortcut và thiết lập hiện tại bằng bản sao lưu?"),L10n.T("Khôi phục"),MessageBoxButton.YesNo,MessageBoxImage.Warning)!=MessageBoxResult.Yes) return;
-            dirty=false; vm.ReplaceFrom(dialog.FileName); WindowsServices.Startup(vm.Config.Startup); Load(null); PreferencesHost.Content=BuildPreferences();
+            dirty=false; vm.ReplaceFrom(dialog.FileName); WindowsServices.Startup(vm.Config.Startup); ShowList(); PreferencesHost.Content=BuildPreferences();
         })));
         panel.Children.Add(Ui.Text(L10n.T("Dữ liệu cục bộ: ")+vm.Store.Root,12,Brushes.DimGray)); return panel;
     }

@@ -1,4 +1,4 @@
-<Window x:Class="QuickAction.SettingsWindow"
+﻿<Window x:Class="QuickAction.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{DynamicResource Loc.2}"
@@ -59,28 +59,29 @@
         <TabControl x:Name="Pages" Grid.Column="1" SelectedIndex="0" Style="{StaticResource TabControl.Pages}">
             <TabItem>
                 <Grid Margin="24">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="268"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <Border Style="{StaticResource Border.Card}" Padding="12">
+                    <Border x:Name="ShortcutListPage" Style="{StaticResource Border.Card}" Padding="12">
                         <Grid>
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                             <Button x:Name="AddShortcutButton" Style="{StaticResource Button.Primary}" Height="38" Content="{DynamicResource Loc.7}"/>
                             <TextBox x:Name="SearchBox" Grid.Row="1" Tag="{DynamicResource Loc.8}" Height="34" Margin="0,10,0,10"/>
                             <Grid Grid.Row="2">
                                 <ListBox x:Name="ShortcutList" IsSynchronizedWithCurrentItem="False" BorderThickness="0" Background="Transparent" AllowDrop="True"
-                                         ItemContainerStyle="{StaticResource ListBoxItem.Shortcut}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Surface" Background="Transparent" CornerRadius="14"><ContentPresenter/></Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource Brush.Bg}"/></Trigger>
+                                                    <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource Brush.Accent}"/><Setter TargetName="Surface" Property="BorderThickness" Value="1"/></Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate></Setter.Value></Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
                                     <ListBox.ItemTemplate><DataTemplate>
-                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/></Grid.ColumnDefinitions>
-                                            <ContentControl Content="{Binding}" Loaded="ShortcutIconLoaded" Width="30" Height="30"/>
-                                            <StackPanel Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding Path}" ToolTip="{Binding Path}" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="2" Text="&#xE840;" FontFamily="{DynamicResource Font.Icon}" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center">
-                                                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
-                                                    <DataTrigger Binding="{Binding PinOrder}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
-                                                </Style.Triggers></Style></TextBlock.Style>
-                                            </TextBlock>
-                                        </Grid>
+                                        <ContentControl Loaded="ShortcutRowLoaded" DataContextChanged="ShortcutRowDataContextChanged"/>
                                     </DataTemplate></ListBox.ItemTemplate>
                                 </ListBox>
                                 <Border x:Name="EmptyState" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="10" IsHitTestVisible="False">
@@ -94,13 +95,15 @@
                         </Grid>
                     </Border>
                     <!-- Form chỉnh sửa -->
-                    <Grid Grid.Column="2">
+                    <Grid x:Name="ShortcutDetailsPage" Visibility="Collapsed">
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <Button x:Name="BackButton" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <StackPanel>
                                 <!-- Thông tin chương trình -->
                                 <Border Style="{StaticResource Border.Card}" Padding="20" Margin="0,0,0,12">
@@ -192,7 +195,7 @@
                         </ScrollViewer>
 
                         <!-- Thanh hành động luôn hiển thị -->
-                        <Border Grid.Row="1" Style="{StaticResource Border.Card}" Padding="12" Margin="0,8,0,0">
+                        <Border Grid.Row="2" Style="{StaticResource Border.Card}" Padding="12" Margin="0,8,0,0">
                             <WrapPanel>
                                 <Button x:Name="SaveButton" DockPanel.Dock="Left" Content="{DynamicResource Loc.37}"
                                         Style="{StaticResource Button.Primary}" Margin="0,0,8,0"/>

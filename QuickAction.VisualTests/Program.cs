@@ -16,6 +16,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if(args.Contains("--icons")) return IconChecks.Run();
         if(args.Contains("--settings")) return SettingsChecks.Run();
         var root=Path.Combine(Path.GetTempPath(),"QuickAction-visual-"+Guid.NewGuid().ToString("N"));
         // Use a plain test host: App.OnStartup would run the production
@@ -28,6 +29,8 @@ internal static class Program
         {
             var vm=new MainViewModel(root); dock=new DockWindow(vm); dock.ShowInTaskbar=true; dock.Title="QuickAction · Transparency test"; dock.Show();
             Pump();
+            if(args.Contains("--drag")) { DragChecks.Run(dock,vm); return 0; }
+            if(args.Contains("--opacity")) { OpacityChecks.Run(dock,vm); return 0; }
             if(args.Contains("--blur")) { CheckBlur(dock,vm); return 0; }
             if(!dock.AllowsTransparency || (GetWindowLongPtr(new WindowInteropHelper(dock).Handle,-20).ToInt64()&0x80000)==0) throw new Exception("Dock must use native layered per-pixel alpha.");
             int passed=0;

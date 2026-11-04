@@ -1,10 +1,11 @@
-using QuickAction.Core;
+﻿using QuickAction.Core;
 using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -76,7 +77,7 @@ public sealed class DockWindow : Window
             var hwnd=new WindowInteropHelper(this).Handle;
             HwndSource.FromHwnd(hwnd).AddHook(Hook);
             try { compositorBackdrop=new CompositorBackdrop(hwnd); }
-            catch(Exception e) when(e is System.Runtime.InteropServices.ExternalException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException) { /* Use the opaque WPF fallback. */ }
+            catch(Exception e) when(e is System.Runtime.InteropServices.ExternalException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException) { /* Use the WPF background without blur. */ }
             Render(); if(vm.Store.RecoveryMessage!=null) Notify(L10n.T(vm.Store.RecoveryMessage));
         };
         SystemEvents.DisplaySettingsChanged+=DisplayChanged;
@@ -129,8 +130,11 @@ public sealed class DockWindow : Window
     }
     private void StartDrag(object sender,MouseButtonEventArgs e)
     {
+        dragStart=null; dragId=null;
         var source=e.OriginalSource as DependencyObject;
-        while(source!=null && source is not Button && source is not TextBox && source is not CheckBox)
+        // Preview input reaches the window before the scrollbar can handle it.
+        // Its thumb and track must never arm a native window drag.
+        while(source!=null && source is not ButtonBase && source is not TextBoxBase && source is not ScrollBar && source is not Thumb)
             source=source is Visual || source is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
         if(source is Button button && button.Tag is Guid id) { dragId=id; dragStart=e.GetPosition(this); }
         else if(source==null) { dragId=null; dragStart=e.GetPosition(this); }
@@ -173,7 +177,7 @@ public sealed class DockWindow : Window
         blurEnabled=transparency && compositorBackdrop!=null;
         // A nearly transparent WPF surface retains hit testing without adding a
         // separately animated tint above the compositor's background.
-        backdrop.Fill=SystemParameters.HighContrast?SystemColors.WindowBrush:new SolidColorBrush(Color.FromArgb(blurEnabled?(byte)1:(byte)255,248,250,255));
+        UpdateBackdropFill();
         if(!expanded) { surface.Child=null; Place(Vertical?10:100,Vertical?100:10); return; }
         var root=new DockPanel { Margin=new(5),LastChildFill=true };
         var strip=new Grid();
@@ -207,14 +211,7 @@ public sealed class DockWindow : Window
         if(rows==null) return; rows.Children.Clear();
         foreach(var item in vm.Items.Where(s=>(s.Name+" "+s.Path+" "+s.Arguments).Contains(search,StringComparison.CurrentCultureIgnoreCase)))
         {
-            var grid=new Grid { Margin=new(14,16,14,16) }; grid.ColumnDefinitions.Add(new(){ Width=new(52) }); grid.ColumnDefinitions.Add(new(){ Width=new(1,GridUnitType.Star) }); grid.ColumnDefinitions.Add(new(){ Width=GridLength.Auto });
-            var icon=Ui.Icon(item,vm); grid.Children.Add(icon);
-            var detail=new StackPanel { Margin=new(6,0,8,0) }; detail.Children.Add(Ui.Text(item.Name,17)); 
-            var path=Ui.Text(item.Path,13,Brushes.SlateGray); path.TextWrapping=TextWrapping.NoWrap; 
-            path.TextTrimming=TextTrimming.CharacterEllipsis; path.ToolTip=item.Path; detail.Children.Add(path); Grid.SetColumn(detail,1); grid.Children.Add(detail);
-            var actions=new StackPanel { Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center }; var admin=Ui.Button("♢ Admin",()=> { item.Admin=!item.Admin; vm.Guard(vm.Save); },L10n.T("Quyền admin mặc định")); admin.Foreground=item.Admin?Brushes.RoyalBlue:Brushes.SlateGray; admin.Background=item.Admin?Brushes.Lavender:Brushes.Transparent; actions.Children.Add(admin);
-            var run=Ui.Button(L10n.T("▶ Run"),()=>_ = vm.Run(item),L10n.T("Chạy ")+item.Name); run.Background=Brushes.RoyalBlue; run.Foreground=Brushes.White; run.Margin=new(12,0,12,0); actions.Children.Add(run); var pin=Ui.Button(item.PinOrder.HasValue?"\uE77A":"\uE718",()=>vm.TogglePin(item),item.PinOrder.HasValue?L10n.T("Bỏ ghim"):L10n.T("Ghim")); pin.FontFamily=new FontFamily("Segoe Fluent Icons"); pin.Background=Brushes.Transparent; pin.BorderThickness=new(0); pin.Padding=new(8,0,8,0); actions.Children.Add(pin); Grid.SetColumn(actions,2); grid.Children.Add(actions);
-            rows.Children.Add(new Border { Child=grid,BorderBrush=new SolidColorBrush(Color.FromRgb(225,231,242)),CornerRadius=new(14),Margin=new(0,0,8,8),BorderThickness=new(1) });
+            rows.Children.Add(Ui.AppRow(item,vm));
         }
         if(rows.Children.Count==0) rows.Children.Add(Ui.Text(L10n.T("Chưa có shortcut phù hợp. Mở Settings hoặc kéo file vào dock để thêm."),14,Brushes.DimGray));
     }
@@ -273,9 +270,15 @@ public sealed class DockWindow : Window
             catch(System.Runtime.InteropServices.ExternalException)
             {
                 compositorBackdrop.Dispose(); compositorBackdrop=null; blurEnabled=false;
-                backdrop.Fill=SystemParameters.HighContrast?SystemColors.WindowBrush:new SolidColorBrush(Color.FromRgb(248,250,255));
+                UpdateBackdropFill();
             }
         }
+    }
+    private void UpdateBackdropFill()
+    {
+        var alpha=blurEnabled?(byte)1:WindowsServices.TransparencyEnabled
+            ?(byte)Math.Round(Math.Clamp(vm.Config.Opacity,.3,1)*255):(byte)255;
+        backdrop.Fill=SystemParameters.HighContrast?SystemColors.WindowBrush:new SolidColorBrush(Color.FromArgb(alpha,248,250,255));
     }
     private void ArrangeContent(double width,double height)
     {

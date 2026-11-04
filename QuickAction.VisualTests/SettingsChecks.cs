@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -17,13 +17,51 @@ internal static class SettingsChecks
         SettingsWindow? window=null;
         try
         {
+            var group=new QuickAction.Controls.SegmentedButtonGroup();
+            foreach(var count in new[]{1,2,3,4,2,1})
+            {
+                group.ItemsSource=Enumerable.Range(1,count).Select(i=>$"Option {i}").ToArray();
+                group.Measure(new Size(800,40)); group.Arrange(new Rect(0,0,800,40)); group.UpdateLayout();
+                var surface=(Border)group.Template.FindName("GroupSurface",group);
+                if(Math.Abs(surface.ActualWidth-count*200)>1)
+                    throw new Exception($"Segment group with {count} options: expected width {count*200}, got {surface.ActualWidth}");
+            }
+            Console.WriteLine("PASS Segment widths: 1/4, 1/2, 3/4, full width and dynamic item changes");
             var vm=new MainViewModel(data);
             foreach(var title in new[]{"Visual Studio","Dọn cache","Docker Desktop","SQL Server Studio"})
                 vm.Items.Add(new Shortcut { Name=title,Path=@"C:\Program Files\"+title+@"\app.exe",PinOrder=vm.Items.Count==0?0:null });
             window=new SettingsWindow(vm); window.Show(); Pump();
             T Find<T>(string name) where T:class => (T)window.FindName(name);
             StackPanel Preferences()=>(StackPanel)Find<ContentControl>("PreferencesHost").Content;
-            ComboBox Language()=>Preferences().Children.OfType<ComboBox>().Single(c=>c.Name=="LanguageCombo");
+            QuickAction.Controls.SegmentedButtonGroup Language()=>Preferences().Children.OfType<QuickAction.Controls.SegmentedButtonGroup>().Single(c=>c.Name=="LanguageGroup");
+            IEnumerable<T> Children<T>(DependencyObject parent) where T:DependencyObject
+            {
+                for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++)
+                {
+                    var child=VisualTreeHelper.GetChild(parent,i);
+                    if(child is T match) yield return match;
+                    foreach(var nested in Children<T>(child)) yield return nested;
+                }
+            }
+            Button RowButton(string label)=>Children<Button>(Find<ListBox>("ShortcutList")).First(b=>System.Windows.Automation.AutomationProperties.GetName(b)==label);
+            void Execute(Button button) { button.Command.Execute(null); Pump(); }
+            if(Find<Grid>("ShortcutDetailsPage").Visibility!=Visibility.Collapsed) throw new Exception("Details visible on startup");
+            Capture(window,"settings-list");
+            Execute(RowButton("Quyền admin mặc định"));
+            if(!vm.Items[0].Admin || !vm.Store.Load().Shortcuts[0].Admin || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("List admin action failed or opened details");
+            Execute(RowButton("Bỏ ghim"));
+            if(vm.Items[0].PinOrder!=null || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("List unpin failed or opened details");
+            Execute(RowButton("Ghim"));
+            if(vm.Items[0].PinOrder==null) throw new Exception("List pin failed");
+            string? runNotice=null; vm.Notification+=message=>runNotice=message;
+            Execute(RowButton("Chạy Visual Studio"));
+            if(runNotice==null || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("List Run did not reach launch handler or opened details");
+            Execute(RowButton("Visual Studio"));
+            if(!Find<Grid>("ShortcutDetailsPage").IsVisible || Find<Border>("ShortcutListPage").IsVisible) throw new Exception("App click did not open details");
+            Find<Button>("BackButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+            if(!Find<Border>("ShortcutListPage").IsVisible || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("Back did not restore list");
+            Execute(RowButton("Visual Studio"));
+            Console.WriteLine("PASS Shortcut list: shared actions, saved admin/pin, app details and back navigation");
             Find<TextBox>("NameBox").Text="Nội dung chưa lưu";
             Language().SelectedIndex=0; Pump();
             if((string)Find<Button>("SaveButton").Content!="Save shortcut") throw new Exception("English resources did not update");
@@ -36,7 +74,7 @@ internal static class SettingsChecks
             Console.WriteLine("PASS Language: live English/Vietnamese switch preserves unsaved editor");
             var preferences=Preferences();
             if(preferences.Children.OfType<Button>().Any()) throw new Exception("Preferences still has a save button");
-            var edges=preferences.Children.OfType<ComboBox>().Last(); edges.SelectedIndex=(int)Edge.Right;
+            var edges=preferences.Children.OfType<QuickAction.Controls.SegmentedButtonGroup>().Last(); edges.SelectedIndex=(int)Edge.Right;
             var opacity=preferences.Children.OfType<Slider>().Single(); opacity.Value=.55;
             var topmost=preferences.Children.OfType<CheckBox>().First(); topmost.IsChecked=false; topmost.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var delay=preferences.Children.OfType<TextBox>().Single(); delay.Text="1200";
@@ -75,14 +113,15 @@ internal static class SettingsChecks
             pickerSearch.Clear(); Pump();
             if(pickerList.Items.Count==0) throw new Exception("Clearing app search did not restore entries");
             Capture(picker,"installed-app-picker"); picker.Close();
-            var list=Find<ListBox>("ShortcutList"); list.SelectedIndex=0; Pump();
+            var list=Find<ListBox>("ShortcutList"); Execute(RowButton("Visual Studio")); Pump();
             if(Find<TextBox>("NameBox").Text!="Visual Studio") throw new Exception($"Selection failed: count={list.Items.Count}, selected={list.SelectedItem}, name={Find<TextBox>("NameBox").Text}, page={Find<TabControl>("Pages").SelectedIndex}");
             Capture(window,"settings");
+            Find<Button>("BackButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
             Find<TextBox>("SearchBox").Text="Docker"; Pump();
             if(list.Items.Count!=1) throw new Exception("Search failed");
             Find<TextBox>("SearchBox").Text="missing"; Pump();
             if(Find<Border>("EmptyState").Visibility!=Visibility.Visible) throw new Exception("Empty state failed");
-            Find<TextBox>("SearchBox").Clear(); list.SelectedIndex=0;
+            Find<TextBox>("SearchBox").Clear(); Pump(); Execute(RowButton("Visual Studio"));
             Find<TextBox>("NameBox").Text="Updated";
             Find<Button>("SaveButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
             if(vm.Items[0].Name!="Updated") throw new Exception("Save failed");
@@ -92,7 +131,7 @@ internal static class SettingsChecks
             var pages=Find<TabControl>("Pages");
             pages.SelectedIndex=1; Pump(); Capture(window,"settings-dock");
             pages.SelectedIndex=2; Pump(); Capture(window,"settings-backup");
-            vm.Items.Clear(); vm.Save(); pages.SelectedIndex=0; Pump(); Capture(window,"settings-empty");
+            Find<Button>("BackButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); vm.Items.Clear(); vm.Save(); pages.SelectedIndex=0; Pump(); Capture(window,"settings-empty");
             Console.WriteLine("PASS Settings: render, selection, search, empty state, save, pin, minimum size, dock and backup pages.");
             return 0;
         }

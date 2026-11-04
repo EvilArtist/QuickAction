@@ -1,4 +1,4 @@
-namespace QuickAction.Core;
+﻿namespace QuickAction.Core;
 
 /// <summary>Shared translations for views, validation and notifications.</summary>
 public static class L10n
@@ -130,6 +130,7 @@ public static class L10n
         ["{0} ứng dụng"] = "{0} apps",
         ["Script {0} kết thúc với mã {1}. Kiểm tra nội dung script và ExecutionPolicy trong PowerShell; QuickAction không thay đổi chính sách này."] = "Script {0} exited with code {1}. Check the script and PowerShell ExecutionPolicy; QuickAction does not change this policy.",
         ["Thiết lập được áp dụng và lưu tự động. Bạn có thể kéo nền dock để đổi cạnh và màn hình. Nếu chuyển thư mục ứng dụng, hãy tắt rồi bật lại Khởi động cùng Windows."] = "Settings are applied and saved automatically. Drag the dock background to change its edge and monitor. If you move the app folder, turn Start with Windows off and on again.",
+        ["Quay lại"] = "Back",
     };
     public static string T(string text) => Language == "en" && English.TryGetValue(text, out var translated) ? translated : text;
 }
