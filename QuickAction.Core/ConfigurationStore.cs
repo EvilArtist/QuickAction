@@ -38,7 +38,7 @@ public sealed class ConfigurationStore
         config.Validate();
         var document=new ConfigurationDocument { Configuration=config };
         long total=0;
-        foreach(var name in config.Shortcuts.Select(s=>s.Icon).Where(s=>!s.StartsWith("builtin:")).Distinct())
+        foreach(var name in config.AllShortcuts().Select(s=>s.Icon).Where(s=>!s.StartsWith("builtin:")).Distinct())
         {
             var path=Path.Combine(Icons,name);
             var size=new FileInfo(path).Length;
@@ -58,7 +58,7 @@ public sealed class ConfigurationStore
         var config=document.Configuration!;
         var pending=new List<(string Name,byte[] Bytes)>();
         long total=0;
-        foreach(var group in config.Shortcuts.Where(s=>!s.Icon.StartsWith("builtin:")).GroupBy(s=>s.Icon).ToList())
+        foreach(var group in config.AllShortcuts().Where(s=>!s.Icon.StartsWith("builtin:")).GroupBy(s=>s.Icon).ToList())
         {
             var ext=Path.GetExtension(group.Key).ToLowerInvariant();
             if(!document.Assets.TryGetValue(group.Key,out var data) || data==null || data.Length>10*1024*1024 || !new[]{".ico",".png",".jpg",".jpeg"}.Contains(ext) || (total+=data.Length)>100*1024*1024)
@@ -89,7 +89,7 @@ public sealed class ConfigurationStore
         var entry=zip.GetEntry("config.json") ?? throw new InvalidDataException(L10n.T("Thiếu config.json."));
         using var reader=new StreamReader(entry.Open()); var config=Read(reader.ReadToEnd());
         // Unique asset names keep the old configuration and its backup intact.
-        foreach(var group in config.Shortcuts.Where(s=>!s.Icon.StartsWith("builtin:")).GroupBy(s=>s.Icon).ToList())
+        foreach(var group in config.AllShortcuts().Where(s=>!s.Icon.StartsWith("builtin:")).GroupBy(s=>s.Icon).ToList())
         {
             var asset=zip.GetEntry("icons/"+group.Key) ?? throw new InvalidDataException(L10n.T("Thiếu icon trong bản sao lưu."));
             var ext=Path.GetExtension(group.Key).ToLowerInvariant();

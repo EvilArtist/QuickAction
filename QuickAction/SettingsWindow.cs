@@ -1,4 +1,4 @@
-﻿using QuickAction.Core;
+using QuickAction.Core;
 using Microsoft.Win32;
 using System;
 using System.IO;
@@ -22,6 +22,8 @@ public sealed partial class SettingsWindow : Window
     private TextBlock iconStatus => IconStatus;
     private readonly System.Windows.Data.CollectionViewSource shortcutSource = new();
     private Guid? editing;
+    private GroupEditor? groupEditor;
+    private GroupStep? editingGroupStep;
     private string icon="builtin:auto";
     private bool dirty,loading;
     private string displayedLanguage;
@@ -39,6 +41,7 @@ public sealed partial class SettingsWindow : Window
             shortcutSource.View.Refresh(); UpdateEmptyState();
         };
         AddShortcutButton.Click+=(_,_)=> { if(CanDiscard()) { SearchBox.Clear(); list.SelectedItem=null; Load(null); ShowDetails(); } };
+        AddGroupButton.Click+=(_,_)=> { if(CanDiscard()) OpenGroup(null); };
         BrowsePathButton.Click+=(_,_)=> { var dialog=new OpenFileDialog { Filter=L10n.T("Chương trình|*.exe;*.bat;*.cmd;*.ps1;*.msi") }; if(dialog.ShowDialog(this)==true) { path.Text=dialog.FileName; if(string.IsNullOrWhiteSpace(name.Text)) name.Text=Path.GetFileNameWithoutExtension(dialog.FileName); } };
         BrowseWorkDirButton.Click+=(_,_)=> { var dialog=new OpenFolderDialog(); if(dialog.ShowDialog(this)==true) work.Text=dialog.FolderName; };
         ChooseInstalledAppButton.Click+=(_,_)=>vm.Guard(()=>
@@ -55,23 +58,41 @@ public sealed partial class SettingsWindow : Window
                 var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();
                 encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
                 using(var output=File.Create(Path.Combine(vm.Store.Icons,iconName))) encoder.Save(output);
-                icon=iconName; icons.SelectedIndex=6; iconStatus.Text=L10n.T("Icon của ")+selected.Name; iconStatus.Visibility=Visibility.Visible;
+                icon=iconName; loading=true; icons.SelectedIndex=6; loading=false; iconStatus.Text=L10n.T("Icon của ")+selected.Name; iconStatus.Visibility=Visibility.Visible;
             }
         });
-        BrowseIconButton.Click+=(_,_)=>vm.Guard(()=> { var dialog=new OpenFileDialog { Filter="Icon|*.ico;*.png;*.jpg;*.jpeg" }; if(dialog.ShowDialog(this)==true) { icon=vm.Store.ImportIcon(dialog.FileName); icons.SelectedIndex=6; iconStatus.Text=Path.GetFileName(dialog.FileName); iconStatus.Visibility=Visibility.Visible; dirty=true; } });
         BackButton.Content="← "+L10n.T("Quay lại");
-        BackButton.Click+=(_,_)=> { if(CanDiscard()) ShowList(); };
+        BackButton.Click+=(_,_)=> { if(editingGroupStep!=null) { if(CanDiscardForm()) ReturnToGroup(); } else if(CanDiscard()) ShowList(); };
         SaveButton.Click+=(_,_)=>vm.Guard(SaveItem);
         RunButton.Click+=(_,_)=>vm.Guard(()=>_ = vm.Run(ReadForm()));
-        PinButton.Click+=(_,_)=> { if(editing.HasValue) { var item=vm.Items.FirstOrDefault(s=>s.Id==editing); if(item!=null) vm.TogglePin(item); } else MessageBox.Show(this,L10n.T("Lưu shortcut trước khi ghim."),"QuickAction"); };
         DeleteButton.Click+=(_,_)=>Delete();
         var menu=new ContextMenu(); var duplicate=new MenuItem { Header=L10n.T("Nhân bản shortcut") };
-        duplicate.Click+=(_,_)=> { if(CanDiscard() && list.SelectedItem is Shortcut item) { Load(item); editing=null; name.Text=item.Name+L10n.T(" — bản sao"); dirty=true; ShowDetails(); } };
+        duplicate.Click+=(_,_)=> { if(CanDiscard() && list.SelectedItem is Shortcut item) { if(item.IsGroup) { var copy=item.Copy(); copy.Id=Guid.NewGuid(); copy.PinOrder=null; copy.Name+=L10n.T(" — bản sao"); OpenGroup(copy); return; } Load(item); editing=null; name.Text=item.Name+L10n.T(" — bản sao"); dirty=true; ShowDetails(); } };
         menu.Items.Add(duplicate); list.ContextMenu=menu;
         foreach(var (box,label) in new[]{(name,L10n.T("Tên shortcut")),(path,L10n.T("Đường dẫn chương trình")),(arguments,L10n.T("Tham số")),(work,L10n.T("Thư mục làm việc")),(SearchBox,L10n.T("Tìm shortcut"))}) System.Windows.Automation.AutomationProperties.SetName(box,label);
         foreach(var box in new[]{name,path,arguments,work}) box.TextChanged+=(_,_)=> { if(!loading) dirty=true; };
         admin.Click+=(_,_)=>dirty=true;
-        icons.SelectionChanged+=(_,_)=> { iconStatus.Visibility=icons.SelectedIndex==6 && !icon.StartsWith("builtin:")?Visibility.Visible:Visibility.Collapsed; if(!loading) dirty=true; };
+        icons.SelectionChanged+=(_,e)=>
+        {
+            if(loading) return;
+            if(icons.SelectedIndex==6)
+            {
+                int previous=e.RemovedItems.Count>0?icons.Items.IndexOf(e.RemovedItems[0]):0;
+                vm.Guard(()=>
+                {
+                    bool selected=false; loading=true;
+                    try
+                    {
+                        icons.IsDropDownOpen=false;
+                        var dialog=new OpenFileDialog { Filter="Icon|*.ico;*.png;*.jpg;*.jpeg" };
+                        if(dialog.ShowDialog(this)==true) { icon=vm.Store.ImportIcon(dialog.FileName); iconStatus.Text=Path.GetFileName(dialog.FileName); dirty=true; selected=true; }
+                    }
+                    finally { if(!selected) icons.SelectedIndex=previous; loading=false; }
+                });
+            }
+            else dirty=true;
+            iconStatus.Visibility=icons.SelectedIndex==6 && !icon.StartsWith("builtin:")?Visibility.Visible:Visibility.Collapsed;
+        };
         vm.Updated+=RefreshList;
         AllowDrop=true; DragOver+=(_,e)=> { e.Effects=e.Data.GetDataPresent(DataFormats.FileDrop)?DragDropEffects.Copy:DragDropEffects.None; e.Handled=true; };
         Drop+=(_,e)=> { if(e.Data.GetData(DataFormats.FileDrop) is string[] files) foreach(var f in files.Where(LaunchBuilder.Supported)) AddFile(f); e.Handled=true; };
@@ -106,23 +127,49 @@ public sealed partial class SettingsWindow : Window
     }
     private void ShowDetails()
     {
+        GroupDetailsHost.Visibility=Visibility.Collapsed;
         ShortcutListPage.Visibility=Visibility.Collapsed;
         ShortcutDetailsPage.Visibility=Visibility.Visible;
         name.Focus();
     }
     private void ShowList()
     {
+        groupEditor=null; editingGroupStep=null; GroupDetailsHost.Content=null; GroupDetailsHost.Visibility=Visibility.Collapsed;
+        DeleteButton.Visibility=Visibility.Visible;
         list.SelectedItem=null;
         Load(null);
         ShortcutDetailsPage.Visibility=Visibility.Collapsed;
         ShortcutListPage.Visibility=Visibility.Visible;
         SearchBox.Focus();
     }
-    private bool CanDiscard()=>!dirty||MessageBox.Show(this,L10n.T("Bỏ các thay đổi chưa lưu?"),"QuickAction",MessageBoxButton.YesNo,MessageBoxImage.Question)==MessageBoxResult.Yes;
+    private bool ConfirmDiscard()=>MessageBox.Show(this,L10n.T("Bỏ các thay đổi chưa lưu?"),"QuickAction",MessageBoxButton.YesNo,MessageBoxImage.Question)==MessageBoxResult.Yes;
+    private bool CanDiscardForm()=>!dirty||ConfirmDiscard();
+    private bool CanDiscard()=>!(dirty || groupEditor?.IsDirty==true)||ConfirmDiscard();
     private void OpenDetails(Shortcut item)
     {
         if(!CanDiscard()) return;
+        if(item.IsGroup) { OpenGroup(item); return; }
         list.SelectedItem=item; Load(item); ShowDetails();
+    }
+    private void OpenGroup(Shortcut? item)
+    {
+        Load(null); editingGroupStep=null;
+        groupEditor=new GroupEditor(vm,item);
+        groupEditor.BackRequested+=()=> { if(CanDiscard()) ShowList(); };
+        groupEditor.EditAppRequested+=step=>
+        {
+            editingGroupStep=step; Load(step.App); ShowDetails(); DeleteButton.Visibility=Visibility.Collapsed;
+            BackButton.Content="← Nhóm app";
+        };
+        GroupDetailsHost.Content=groupEditor;
+        ReturnToGroup();
+    }
+    private void ReturnToGroup()
+    {
+        editingGroupStep=null; Load(null); DeleteButton.Visibility=Visibility.Visible;
+        BackButton.Content="← "+L10n.T("Quay lại");
+        ShortcutListPage.Visibility=Visibility.Collapsed; ShortcutDetailsPage.Visibility=Visibility.Collapsed;
+        GroupDetailsHost.Visibility=Visibility.Visible;
     }
     private void Load(Shortcut? item)
     {
@@ -133,18 +180,22 @@ public sealed partial class SettingsWindow : Window
     }
     public void AddFile(string file)
     {
-        if(!CanDiscard()) return; tabs.SelectedIndex=0; list.SelectedItem=null; Load(null); path.Text=file; name.Text=Path.GetFileNameWithoutExtension(file); dirty=true; ShowDetails();
+        if(!CanDiscard()) return; ShowList(); tabs.SelectedIndex=0; list.SelectedItem=null; Load(null); path.Text=file; name.Text=Path.GetFileNameWithoutExtension(file); dirty=true; ShowDetails();
     }
     private Shortcut ReadForm()
     {
         if(string.IsNullOrWhiteSpace(name.Text)) throw new ArgumentException(L10n.T("Nhập tên shortcut."));
         var selectedIcon=icons.SelectedIndex is >=0 and <6 ? new[]{"builtin:auto","builtin:app","builtin:terminal","builtin:folder","builtin:star","builtin:tools"}[icons.SelectedIndex] : icon;
-        if(icons.SelectedIndex==6 && selectedIcon.StartsWith("builtin:")) throw new ArgumentException(L10n.T("Chọn file icon bằng Browse icon."));
+        if(icons.SelectedIndex==6 && selectedIcon.StartsWith("builtin:")) throw new ArgumentException("Chọn Icon riêng từ danh sách để chọn file icon.");
         var item=new Shortcut { Id=editing??Guid.NewGuid(),Name=name.Text.Trim(),Path=path.Text.Trim(),Arguments=arguments.Text,WorkingDirectory=work.Text.Trim(),Admin=admin.IsChecked==true,Icon=selectedIcon,PinOrder=vm.Items.FirstOrDefault(s=>s.Id==editing)?.PinOrder };
         LaunchBuilder.Build(item,Environment.SystemDirectory); return item;
     }
     private void SaveItem()
     {
+        if(editingGroupStep is { } step && groupEditor!=null)
+        {
+            groupEditor.UpdateApp(step,ReadForm()); ReturnToGroup(); return;
+        }
         var item=ReadForm(); var old=vm.Items.FirstOrDefault(s=>s.Id==item.Id);
         if(old!=null) vm.Items[vm.Items.IndexOf(old)]=item; else vm.Items.Add(item);
         vm.Save(); dirty=false; SearchBox.Clear(); list.SelectedItem=item; Load(item);
@@ -153,7 +204,7 @@ public sealed partial class SettingsWindow : Window
     {
         var item=vm.Items.FirstOrDefault(s=>s.Id==editing); if(item==null) return;
         if(MessageBox.Show(this,L10n.T("Xóa shortcut “")+item.Name+L10n.T("”? File chương trình vẫn được giữ nguyên."),"QuickAction",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes) return;
-        vm.Guard(()=> { dirty=false; vm.Items.Remove(item); vm.Config.Shortcuts=vm.Items.ToList(); Pins.Normalize(vm.Config); vm.Save(); ShowList(); });
+        vm.Guard(()=> { dirty=false; vm.Items.Remove(item); vm.Save(); ShowList(); });
     }
     private UIElement BuildPreferences()
     {
@@ -164,6 +215,9 @@ public sealed partial class SettingsWindow : Window
         Ui.Label(panel,L10n.T("Màn hình"));
         var monitor=new Controls.SegmentedButtonGroup { Name="MonitorGroup",ItemsSource=Forms.Screen.AllScreens.Select(s=>s.DeviceName).ToArray(),SelectedItem=WindowsServices.Screen(vm.Config).DeviceName,Margin=new(0,5,0,16) }; panel.Children.Add(monitor);
         System.Windows.Automation.AutomationProperties.SetName(monitor,L10n.T("Màn hình"));
+        Ui.Label(panel,L10n.T("Kích thước icon"));
+        var iconSize=new Controls.SegmentedButtonGroup { Name="IconSizeGroup",ItemsSource=new[]{L10n.T("Nhỏ"),"Medium","Big"},SelectedIndex=(int)vm.Config.IconSize,Margin=new(0,5,0,16) };
+        System.Windows.Automation.AutomationProperties.SetName(iconSize,L10n.T("Kích thước icon")); panel.Children.Add(iconSize);
         Ui.Label(panel,L10n.T("Cạnh ghim")); var edge=new Controls.SegmentedButtonGroup { ItemsSource=new[]{L10n.T("Trái"),L10n.T("Phải"),L10n.T("Trên"),L10n.T("Dưới")},SelectedIndex=(int)vm.Config.Edge,Margin=new(0,5,0,16) }; panel.Children.Add(edge);
         System.Windows.Automation.AutomationProperties.SetName(edge,L10n.T("Cạnh ghim"));
         var topmost=new CheckBox { Margin=new(0,8,0,12),Content=L10n.T("Luôn nổi trên các cửa sổ khác"),IsChecked=vm.Config.Topmost }; panel.Children.Add(topmost);
@@ -189,6 +243,7 @@ public sealed partial class SettingsWindow : Window
         }
         language.SelectionChanged+=(_,_)=> { if(language.SelectedIndex>=0) Apply(vm.Config.Language,language.SelectedIndex==0?"en":"vi",value=>vm.Config.Language=value); };
         monitor.SelectionChanged+=(_,_)=> { if(monitor.SelectedItem is string selected) Apply(vm.Config.Monitor,selected,value=>vm.Config.Monitor=value); };
+        iconSize.SelectionChanged+=(_,_)=> { if(iconSize.SelectedIndex>=0) Apply(vm.Config.IconSize,(DockIconSize)iconSize.SelectedIndex,value=>vm.Config.IconSize=value); };
         edge.SelectionChanged+=(_,_)=> { if(edge.SelectedIndex>=0) Apply(vm.Config.Edge,(Edge)edge.SelectedIndex,value=>vm.Config.Edge=value); };
         topmost.Click+=(_,_)=>Apply(vm.Config.Topmost,topmost.IsChecked==true,value=>vm.Config.Topmost=value);
         startup.Click+=(_,_)=>Apply(vm.Config.Startup,startup.IsChecked==true,value=> { WindowsServices.Startup(value); vm.Config.Startup=value; });

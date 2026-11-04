@@ -16,6 +16,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if(args.Contains("--groups")) return GroupEditorChecks.Run();
         if(args.Contains("--icons")) return IconChecks.Run();
         if(args.Contains("--settings")) return SettingsChecks.Run();
         var root=Path.Combine(Path.GetTempPath(),"QuickAction-visual-"+Guid.NewGuid().ToString("N"));
@@ -29,6 +30,7 @@ internal static class Program
         {
             var vm=new MainViewModel(root); dock=new DockWindow(vm); dock.ShowInTaskbar=true; dock.Title="QuickAction · Transparency test"; dock.Show();
             Pump();
+            if(args.Contains("--icon-sizes")) { DockSizeChecks.Run(dock,vm); return 0; }
             if(args.Contains("--drag")) { DragChecks.Run(dock,vm); return 0; }
             if(args.Contains("--opacity")) { OpacityChecks.Run(dock,vm); return 0; }
             if(args.Contains("--blur")) { CheckBlur(dock,vm); return 0; }

@@ -11,6 +11,7 @@ void Throws(Action action,string name) { try { action(); } catch { Check(true,na
 var root=Path.Combine(Path.GetTempPath(),"QuickAction-tests-"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
 try
 {
+    await GroupChecks.Run(Check,Throws,root);
     Check(JsonSerializer.Deserialize<Configuration>("{}")!.Language=="vi","Legacy configurations default to Vietnamese");
     var languageStore=new ConfigurationStore(Path.Combine(root,"language"));
     foreach(var language in new[]{"en","vi"})

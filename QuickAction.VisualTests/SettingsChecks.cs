@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -28,7 +28,7 @@ internal static class SettingsChecks
             }
             Console.WriteLine("PASS Segment widths: 1/4, 1/2, 3/4, full width and dynamic item changes");
             var vm=new MainViewModel(data);
-            foreach(var title in new[]{"Visual Studio","Dọn cache","Docker Desktop","SQL Server Studio"})
+            foreach(var title in new[]{"Visual Studio","Dọn cache","Docker Desktop","SQL Server Studio","Notepad","Terminal"})
                 vm.Items.Add(new Shortcut { Name=title,Path=@"C:\Program Files\"+title+@"\app.exe",PinOrder=vm.Items.Count==0?0:null });
             window=new SettingsWindow(vm); window.Show(); Pump();
             T Find<T>(string name) where T:class => (T)window.FindName(name);
@@ -49,10 +49,26 @@ internal static class SettingsChecks
             Capture(window,"settings-list");
             Execute(RowButton("Quyền admin mặc định"));
             if(!vm.Items[0].Admin || !vm.Store.Load().Shortcuts[0].Admin || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("List admin action failed or opened details");
-            Execute(RowButton("Bỏ ghim"));
-            if(vm.Items[0].PinOrder!=null || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("List unpin failed or opened details");
-            Execute(RowButton("Ghim"));
-            if(vm.Items[0].PinOrder==null) throw new Exception("List pin failed");
+            if(Children<Button>(window).Any(b=>b.Name=="PinButton" || b.ToolTip is string hint && (hint=="Ghim" || hint=="Bỏ ghim"))) throw new Exception("Pin button still visible");
+            var original=vm.Items.ToArray();
+            if(!vm.DockItems.SequenceEqual(original.Take(5))) throw new Exception("Dock does not show first five apps");
+            var row=Children<Border>(Find<ListBox>("ShortcutList")).First(b=>b.ReadLocalValue(UIElement.AllowDropProperty) is true && b.DataContext==original[0]);
+            var dragCtor=typeof(DragEventArgs).GetConstructors(BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic).Single();
+            var drop=(DragEventArgs)dragCtor.Invoke(new object[]{new DataObject("QuickAction.Shortcut",original[5].Id),DragDropKeyStates.LeftMouseButton,DragDropEffects.Move,row,new Point(1,1)});
+            drop.RoutedEvent=DragDrop.DropEvent; row.RaiseEvent(drop); Pump();
+            if(!drop.Handled || vm.Items[0]!=original[5] || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception($"Drop did not reorder: handled={drop.Handled}, first={vm.Items[0].Name}, details={Find<Grid>("ShortcutDetailsPage").IsVisible}, point={drop.GetPosition(row)}, height={row.ActualHeight}");
+            if(!vm.DockItems.SequenceEqual(vm.Items.Take(5)) || vm.DockItems.Contains(original[4])) throw new Exception("Dock did not replace fifth app after reorder");
+            var reopened=new MainViewModel(data);
+            if(!reopened.Items.Select(i=>i.Id).SequenceEqual(vm.Items.Select(i=>i.Id))) throw new Exception("Reorder not persisted");
+            vm.Reorder(original[5].Id,original[4].Id,true); Pump();
+            if(!vm.Items.SequenceEqual(original)) throw new Exception("Moving down to last position failed");
+            Find<TextBox>("SearchBox").Text="Studio"; Pump();
+            vm.Reorder(original[3].Id,original[0].Id,false); Pump();
+            if(vm.Items[0]!=original[3] || vm.Items[2]!=original[1] || vm.Items[3]!=original[2]) throw new Exception("Filtered reorder disturbed hidden app order");
+            vm.Reorder(original[3].Id,original[2].Id,true); Find<TextBox>("SearchBox").Clear(); Pump();
+            vm.Reorder(original[0].Id,original[0].Id); vm.Reorder(Guid.NewGuid(),original[0].Id);
+            if(!vm.Items.SequenceEqual(original)) throw new Exception("Self/unknown drop changed order");
+            Console.WriteLine("PASS Reorder: row drop, first-five dock, persistence, filtered order, move up/down and invalid drops");
             string? runNotice=null; vm.Notification+=message=>runNotice=message;
             Execute(RowButton("Chạy Visual Studio"));
             if(runNotice==null || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("List Run did not reach launch handler or opened details");
@@ -61,7 +77,7 @@ internal static class SettingsChecks
             Find<Button>("BackButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
             if(!Find<Border>("ShortcutListPage").IsVisible || Find<Grid>("ShortcutDetailsPage").IsVisible) throw new Exception("Back did not restore list");
             Execute(RowButton("Visual Studio"));
-            Console.WriteLine("PASS Shortcut list: shared actions, saved admin/pin, app details and back navigation");
+            Console.WriteLine("PASS Shortcut list: shared actions, saved admin and Run, app details and back navigation");
             Find<TextBox>("NameBox").Text="Nội dung chưa lưu";
             Language().SelectedIndex=0; Pump();
             if((string)Find<Button>("SaveButton").Content!="Save shortcut") throw new Exception("English resources did not update");
@@ -72,6 +88,14 @@ internal static class SettingsChecks
             if((string)Find<Button>("SaveButton").Content!="Lưu shortcut") throw new Exception("Vietnamese resources did not update");
             typeof(SettingsWindow).GetMethod("Load",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(window,new object?[]{null});
             Console.WriteLine("PASS Language: live English/Vietnamese switch preserves unsaved editor");
+            var sizes=Preferences().Children.OfType<QuickAction.Controls.SegmentedButtonGroup>().Single(c=>c.Name=="IconSizeGroup");
+            foreach(var size in Enum.GetValues<DockIconSize>())
+            {
+                sizes.SelectedIndex=(int)size; Pump();
+                if(vm.Config.IconSize!=size || vm.Store.Load().IconSize!=size) throw new Exception("Icon size was not applied and saved");
+            }
+            sizes.SelectedIndex=0; Pump();
+            Console.WriteLine("PASS Icon size preference: all three sizes apply and persist");
             var preferences=Preferences();
             if(preferences.Children.OfType<Button>().Any()) throw new Exception("Preferences still has a save button");
             var edges=preferences.Children.OfType<QuickAction.Controls.SegmentedButtonGroup>().Last(); edges.SelectedIndex=(int)Edge.Right;
@@ -125,14 +149,12 @@ internal static class SettingsChecks
             Find<TextBox>("NameBox").Text="Updated";
             Find<Button>("SaveButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
             if(vm.Items[0].Name!="Updated") throw new Exception("Save failed");
-            Find<Button>("PinButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
-            if(vm.Items[0].PinOrder!=null) throw new Exception("Pin toggle failed");
             window.Width=1000; window.Height=600; Pump(); Capture(window,"settings-small");
             var pages=Find<TabControl>("Pages");
             pages.SelectedIndex=1; Pump(); Capture(window,"settings-dock");
             pages.SelectedIndex=2; Pump(); Capture(window,"settings-backup");
-            Find<Button>("BackButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); vm.Items.Clear(); vm.Save(); pages.SelectedIndex=0; Pump(); Capture(window,"settings-empty");
-            Console.WriteLine("PASS Settings: render, selection, search, empty state, save, pin, minimum size, dock and backup pages.");
+            Find<Button>("BackButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); vm.Items.Clear(); vm.Save(); if(vm.DockItems.Any()) throw new Exception("Empty dock still contains apps"); pages.SelectedIndex=0; Pump(); Capture(window,"settings-empty");
+            Console.WriteLine("PASS Settings: render, selection, search, empty state, save, minimum size, dock and backup pages.");
             return 0;
         }
         catch(Exception error) { Console.Error.WriteLine(error); return 1; }

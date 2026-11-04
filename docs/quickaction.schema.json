@@ -13,6 +13,7 @@
         "language": { "enum": ["vi", "en"] },
         "monitor": { "type": "string" },
         "edge": { "enum": ["Left", "Right", "Top", "Bottom"] },
+        "iconSize": { "enum": ["Small", "Medium", "Big"], "default": "Small" },
         "position": { "type": "number", "minimum": 0, "maximum": 1 },
         "opacity": { "type": "number", "minimum": 0.3, "maximum": 1 },
         "collapseMilliseconds": { "type": "integer", "minimum": 200, "maximum": 5000 },
@@ -30,7 +31,27 @@
               "workingDirectory": { "type": "string" },
               "icon": { "type": "string" },
               "admin": { "type": "boolean" },
-              "pinOrder": { "type": ["integer", "null"] }
+              "pinOrder": { "type": ["integer", "null"] },
+              "steps": {
+                "description": "Null for a single app. Group dependencies reference earlier step IDs; nested groups are not supported.",
+                "type": ["array", "null"], "minItems": 1, "maxItems": 1000,
+                "items": {
+                  "type": "object",
+                  "required": ["id", "app"],
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "app": {
+                      "allOf": [
+                        { "$ref": "#/properties/configuration/properties/shortcuts/items" },
+                        { "properties": { "steps": { "type": "null" } } }
+                      ]
+                    },
+                    "dependsOn": { "type": ["string", "null"], "format": "uuid" },
+                    "condition": { "enum": [null, "Together", "InputIdle", "Finished"] },
+                    "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 86400 }
+                  }
+                }
+              }
             }
           }
         }

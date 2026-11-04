@@ -18,11 +18,15 @@ Your language preference is included in configuration backups. Existing configur
 
 ### Managing shortcuts
 
-- Drag the idle bar or an empty part of the dock to change its monitor or screen edge. Drag one pinned icon onto another to reorder them.
+Use **Settings → + Nhóm app** to open group details inside Settings. **+ Thêm app vào nhóm** at the end of the steps opens single-app details directly, with file and installed-app pickers. The app is added to the group only after saving; going back leaves no empty row. Selecting a custom icon in the dropdown opens the file picker directly. The pencil beside each delete button opens the same details form used for single apps; saving returns to the group draft without creating a separate shortcut. Save the group to persist all changes. Choose an earlier app and **Cùng với** (after its launch request), **Khi sẵn sàng** (`WaitForInputIdle`), or **Khi kết thúc** (process exit). The first app starts immediately. New steps default to Together with the immediately preceding app. Delays are whole seconds from 0 to 86400. Reordering or removing steps resets invalid references to Together with the immediately preceding app and zero delay; valid selections are preserved. Groups can be duplicated, reordered on the dock, and included in backups with their app icons.
+
+Input-idle waits at most 30 seconds; processes without an input queue continue immediately. Completion waits have no timeout. Monitoring follows the launched process, so launchers that hand off to another process may signal before the actual app is ready or closed. AppsFolder entries support “Together”; use a direct EXE to wait for readiness or completion. Each app retains its own arguments, working directory, and admin setting. A failed launch prevents its dependent steps from running while independent branches continue.
+
+- Drag the idle bar or an empty part of the dock to change its monitor or screen edge. Drag one dock icon onto another to reorder apps.
 - Each shortcut has its own name, program, arguments, working directory, and administrator setting. You can add the same executable multiple times with different arguments.
 - **Settings → Choose installed app…** opens a searchable grid of installed apps, including Microsoft Store apps. Desktop apps use their executable path and launch arguments. Store apps and entries without a direct executable use a `shell:AppsFolder\…` identifier, which does not support custom arguments or administrator permissions. The app icon is saved with the shortcut. Choose an app, then select **Save shortcut**. Portable apps not registered with Windows can be added by file path.
 - Choose a built-in icon, use the program's icon, or select a custom image. Custom icons are copied into QuickAction's local data folder.
-- Pin up to five apps. The remaining shortcuts are available in All Apps. Press Escape or click outside to close All Apps.
+- The first five apps in the list appear on the dock automatically. Use the drag handles in Settings or All Apps to reorder them; changes are saved automatically. The remaining shortcuts are available in All Apps. Press Escape or click outside to close All Apps.
 - The system tray menu provides Show / hide dock, Settings, and Exit.
 - Start with Windows is off by default. If you move the application folder, turn this setting off and on again.
 
@@ -50,7 +54,7 @@ JSON backups contain configuration and embedded base64 icons, but not the target
 
 The data schema is documented in [docs/quickaction.schema.json](docs/quickaction.schema.json). Current configuration and backup files use an envelope with `format: quickaction`, `schemaVersion: 1`, `configuration`, and `assets`. Older data remains readable and is migrated when saved. Local configuration keeps icons in the `icons` folder; JSON backups embed them in `assets`.
 
-QuickAction has no automatic updater, cloud synchronization, or telemetry. Version 1 supports one dock, up to five pinned apps, and additional shortcuts in All Apps.
+QuickAction has no automatic updater, cloud synchronization, or telemetry. Version 1 supports one dock, the first five apps on the dock, and additional shortcuts in All Apps.
 
 ## Launch behavior
 
@@ -88,7 +92,7 @@ The `--settings` check covers the settings interface, language switching, immedi
 
 - All four dock edges, the 150 ms hover delay, the default 600 ms collapse delay, All Apps, and keyboard interaction.
 - Two monitors with different DPI scales (100%, 150%, and 200%), negative screen coordinates, monitor removal, and position persistence after restart.
-- Multiple shortcuts for the same app with different arguments, custom icons, the five-app pin limit, and drag reordering.
+- Multiple shortcuts for the same app with different arguments, custom icons, the first-five-app dock selection, and drag reordering.
 - Harmless sample files of each supported type with spaces and Unicode, administrator launch, UAC cancellation, and PowerShell policy restrictions.
 - Transparency disabled, high contrast enabled, no mouse interaction outside rounded corners, and idle CPU usage.
 - Backup and restore, damaged configuration recovery, the system tray, startup, and launching a second instance.

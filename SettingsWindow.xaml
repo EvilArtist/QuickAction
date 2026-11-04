@@ -62,7 +62,10 @@
                     <Border x:Name="ShortcutListPage" Style="{StaticResource Border.Card}" Padding="12">
                         <Grid>
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                            <Button x:Name="AddShortcutButton" Style="{StaticResource Button.Primary}" Height="38" Content="{DynamicResource Loc.7}"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="AddGroupButton" Height="38" Content="+ Nhóm app" Margin="0,0,8,0"/>
+                                <Button x:Name="AddShortcutButton" Style="{StaticResource Button.Primary}" Height="38" Content="{DynamicResource Loc.7}"/>
+                            </StackPanel>
                             <TextBox x:Name="SearchBox" Grid.Row="1" Tag="{DynamicResource Loc.8}" Height="34" Margin="0,10,0,10"/>
                             <Grid Grid.Row="2">
                                 <ListBox x:Name="ShortcutList" IsSynchronizedWithCurrentItem="False" BorderThickness="0" Background="Transparent" AllowDrop="True"
@@ -95,6 +98,7 @@
                         </Grid>
                     </Border>
                     <!-- Form chỉnh sửa -->
+                    <ContentControl x:Name="GroupDetailsHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
                     <Grid x:Name="ShortcutDetailsPage" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -178,8 +182,6 @@
 <ComboBoxItem Content="{DynamicResource Loc.33}"/>
 <ComboBoxItem Content="{DynamicResource Loc.34}"/>
                                             </ComboBox>
-                                            <Button x:Name="BrowseIconButton" Grid.Column="1" Content="{DynamicResource Loc.35}"
-                                                    Height="36" Margin="8,0,0,0"/>
                                         </Grid>
                                         <TextBlock x:Name="IconStatus" Style="{StaticResource TextBlock.FieldHint}" Visibility="Collapsed"/>
                                     </StackPanel>
@@ -199,9 +201,6 @@
                             <WrapPanel>
                                 <Button x:Name="SaveButton" DockPanel.Dock="Left" Content="{DynamicResource Loc.37}"
                                         Style="{StaticResource Button.Primary}" Margin="0,0,8,0"/>
-                                <Button x:Name="PinButton" DockPanel.Dock="Left" Content="{DynamicResource Loc.38}"
-                                       />
-
                                 <Button x:Name="DeleteButton" DockPanel.Dock="Right" Content="{DynamicResource Loc.39}"
                                         Style="{StaticResource Button.Danger}" Margin="8,0,0,0"/>
                             </WrapPanel>

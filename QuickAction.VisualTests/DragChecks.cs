@@ -39,7 +39,12 @@ internal static class DragChecks
             if(pending.GetValue(dock)!=null || dragId.GetValue(dock)!=null)
                 throw new Exception($"{target.GetType().Name} armed a dock drag.");
         }
-        var pin=nodes.OfType<Button>().First(b=>b.Tag is Guid);
+        var dockApps=nodes.OfType<Button>().Where(b=>b.Tag is Guid && b.Content is StackPanel).ToArray();
+        if(dockApps.Length!=5 || !dockApps.Select(b=>(Guid)b.Tag).SequenceEqual(vm.Items.Take(5).Select(i=>i.Id))) throw new Exception("Dock buttons do not match first five apps");
+        var handle=nodes.OfType<Button>().First(b=>b.Tag is Guid && b.Width==28);
+        Press(handle);
+        if(!Equals(dragId.GetValue(dock),handle.Tag)) throw new Exception("All Apps reorder handle did not arm shortcut drag");
+        var pin=dockApps[0];
         Press(pin);
         if(pending.GetValue(dock)==null || !Equals(dragId.GetValue(dock),pin.Tag)) throw new Exception("Pinned shortcut drag was blocked.");
         Press((UIElement)dock.Content);

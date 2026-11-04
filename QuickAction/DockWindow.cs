@@ -1,4 +1,4 @@
-﻿using QuickAction.Core;
+using QuickAction.Core;
 using Microsoft.Win32;
 using System;
 using System.Diagnostics;
@@ -33,6 +33,7 @@ public sealed class DockWindow : Window
     private bool hasPlacement,resizing;
     private bool rendering;
     private double resizeFromWidth,resizeFromHeight,resizeToWidth,resizeToHeight;
+    private double resizeFromRadius,resizeToRadius;
     private string placementMonitor="";
     private Edge placementEdge;
     private double placementScale;
@@ -70,7 +71,7 @@ public sealed class DockWindow : Window
         Deactivated+=(_,_)=> { if(!dragging&&!placing&&!rendering&&all) { Keyboard.ClearFocus(); ChangeState(true,false); } };
         PreviewKeyDown+=(_,e)=> { if(e.Key==Key.Escape) { Keyboard.ClearFocus(); ChangeState(false,false); e.Handled=true; } };
         PreviewMouseLeftButtonDown+=StartDrag; PreviewMouseMove+=MoveDrag; PreviewMouseLeftButtonUp+=(_,_)=> { dragStart=null; dragId=null; };
-        DragOver+=(_,e)=> { e.Effects=e.Data.GetDataPresent(DataFormats.FileDrop)?DragDropEffects.Copy:e.Data.GetDataPresent("QuickAction.Pin")?DragDropEffects.Move:DragDropEffects.None; e.Handled=true; };
+        DragOver+=(_,e)=> { e.Effects=e.Data.GetDataPresent(DataFormats.FileDrop)?DragDropEffects.Copy:e.Data.GetDataPresent(Ui.ShortcutDragFormat)?DragDropEffects.Move:DragDropEffects.None; e.Handled=true; };
         Drop+=(_,e)=> { if(e.Data.GetData(DataFormats.FileDrop) is string[] files) foreach(var f in files.Where(LaunchBuilder.Supported)) OpenSettings(f); e.Handled=true; };
         SourceInitialized+=(_,_)=>
         {
@@ -146,7 +147,7 @@ public sealed class DockWindow : Window
         dragging=true; if(resizing) FinishResize(); hover.Stop(); collapse.Stop();
         try
         {
-            if(dragId is Guid id) { suppressShortcutClick=true; DragDrop.DoDragDrop(this,new DataObject("QuickAction.Pin",id),DragDropEffects.Move); }
+            if(dragId is Guid id) { suppressShortcutClick=true; DragDrop.DoDragDrop(this,new DataObject(Ui.ShortcutDragFormat,id),DragDropEffects.Move); }
             else
             {
                 DragMove(); var cursor=WindowsServices.Cursor; var screen=Forms.Screen.FromPoint(new System.Drawing.Point(cursor.X,cursor.Y)); var rect=screen.WorkingArea;
@@ -160,6 +161,28 @@ public sealed class DockWindow : Window
     private Button DockButton(string text,Action action,string hint)
     {
         var b=Ui.Button(text,action,hint); b.Width=48; b.Height=48; b.Padding=new(4); b.Margin=new(2); b.FontSize=24; b.FontFamily=new FontFamily("Segoe Fluent Icons"); b.Background=Brushes.Transparent; return b;
+    }
+    private (double Icon,double Width,double Height,int Characters) AppSize => vm.Config.IconSize switch
+    {
+        DockIconSize.Medium => (36,80,58,12),
+        DockIconSize.Big => (48,96,70,15),
+        _ => (26,64,48,9)
+    };
+    private FrameworkElement DockAppContent(Shortcut item)
+    {
+        var size=AppSize;
+        var title=item.Name.Trim();
+        var characters=System.Globalization.StringInfo.ParseCombiningCharacters(title);
+        if(characters.Length>size.Characters) title=title[..characters[size.Characters-1]]+"…";
+        var content=new StackPanel { Width=size.Width-8,HorizontalAlignment=HorizontalAlignment.Center };
+        content.Children.Add(new Viewbox { Width=size.Icon,Height=size.Icon,Child=Ui.Icon(item,vm) });
+        content.Children.Add(new TextBlock
+        {
+            Text=title,FontFamily=new FontFamily("Segoe UI"),FontSize=10,FontWeight=FontWeights.Normal,
+            Foreground=Brushes.Black,Height=12,TextAlignment=TextAlignment.Center,
+            TextWrapping=TextWrapping.NoWrap,TextTrimming=TextTrimming.CharacterEllipsis,Margin=new(0,2,0,0)
+        });
+        return content;
     }
     private void Render()
     {
@@ -185,10 +208,10 @@ public sealed class DockWindow : Window
         strip.Children.Add(DockButton("\uE713",()=>OpenSettings(),L10n.T("Settings")));
         var pins=new StackPanel { Orientation=Vertical?Orientation.Vertical:Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center };
         if(Vertical) Grid.SetRow(pins,1); else Grid.SetColumn(pins,1); strip.Children.Add(pins);
-        foreach(var item in vm.Pinned)
+        foreach(var item in vm.DockItems)
         {
-            var b=DockButton("",()=> { if(!dragging&&!suppressShortcutClick) _ = vm.Run(item); },item.Name+(item.Admin?" • Admin":"")); b.Content=Ui.Icon(item,vm); b.Tag=item.Id;
-            b.Drop+=(_,e)=> { if(e.Data.GetData("QuickAction.Pin") is Guid source) { vm.Reorder(source,item.Id); e.Handled=true; } };
+            var b=DockButton("",()=> { if(!dragging&&!suppressShortcutClick) _ = vm.Run(item); },item.Name+(item.Admin?" • Admin":"")); b.Width=AppSize.Width; b.Height=AppSize.Height; b.Padding=new(2); b.Content=DockAppContent(item); b.Tag=item.Id;
+            b.Drop+=(_,e)=> { if(e.Data.GetData(Ui.ShortcutDragFormat) is Guid source) { vm.Reorder(source,item.Id); e.Handled=true; } };
             pins.Children.Add(b);
         }
         var allButton=DockButton("\uE71D",()=> { ChangeState(true,!all); if(all) Activate(); },L10n.T("Tất cả ứng dụng"));
@@ -202,8 +225,10 @@ public sealed class DockWindow : Window
             DockPanel.SetDock(header,Dock.Top); content.Children.Add(header); rows=new StackPanel(); var scroll=new ScrollViewer { Content=rows,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled }; scroll.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)]=FindResource("AllApps.ScrollBar"); content.Children.Add(scroll); root.Children.Add(content); FillRows();
         }
         surface.Child=root;
-        var count=vm.Pinned.Count()+2;
-        Place(all?850:Vertical?62:count*52+10,all?Math.Max(560,Vertical?count*52+10:560):Vertical?count*52+10:62);
+        var count=vm.DockItems.Count();
+        var stripLength=count*((Vertical?AppSize.Height:AppSize.Width)+4)+2*52+10;
+        var stripThickness=(Vertical?AppSize.Width:AppSize.Height)+14;
+        Place(all?850:Vertical?stripThickness:stripLength,all?Math.Max(560,Vertical?stripLength:560):Vertical?stripLength:stripThickness);
         if(SystemParameters.ClientAreaAnimation) { root.BeginAnimation(OpacityProperty,new DoubleAnimation(.65,1,TimeSpan.FromMilliseconds(ResizeDurationMilliseconds))); }
     }
     private void FillRows()
@@ -230,12 +255,13 @@ public sealed class DockWindow : Window
             CommitSize(width,height); hasPlacement=true; return;
         }
         resizeFromWidth=visibleWidth; resizeFromHeight=visibleHeight;
+        resizeFromRadius=reveal.RadiusX; resizeToRadius=DockRadius(width,height);
         resizing=true; hover.Stop(); collapse.Stop();
         // Allocate one envelope for the whole transition. The native HWND and
         // the content layout remain unchanged until the final commit.
         ApplyHostSize(Math.Max(visibleWidth,width),Math.Max(visibleHeight,height));
         ArrangeContent(width,height);
-        SetReveal(visibleWidth,visibleHeight);
+        SetReveal(visibleWidth,visibleHeight,resizeFromRadius);
         surface.IsHitTestVisible=false;
         // Progress must not depend on composition callbacks: layered/occluded
         // windows may stop receiving Rendering before the final frame.
@@ -250,7 +276,7 @@ public sealed class DockWindow : Window
     private void ApplyResizeProgress(double progress)
     {
         var eased=1-Math.Pow(1-progress,3);
-        SetReveal(resizeFromWidth+(resizeToWidth-resizeFromWidth)*eased,resizeFromHeight+(resizeToHeight-resizeFromHeight)*eased);
+        SetReveal(resizeFromWidth+(resizeToWidth-resizeFromWidth)*eased,resizeFromHeight+(resizeToHeight-resizeFromHeight)*eased,resizeFromRadius+(resizeToRadius-resizeFromRadius)*eased);
         if(progress>=1) FinishResize();
     }
     private Rect RevealRect(double width,double height)
@@ -259,11 +285,14 @@ public sealed class DockWindow : Window
         var y=placementEdge==Edge.Top?0:placementEdge==Edge.Bottom?hostHeight-height:(hostHeight-height)*placementPosition;
         return new Rect(Math.Max(0,x),Math.Max(0,y),width,height);
     }
-    private void SetReveal(double width,double height)
+    private double DockRadius(double width,double height)=>!all && vm.Config.IconSize==DockIconSize.Small
+        ?Math.Min(width,height)/2:Math.Min(28,Math.Min(width,height)/2);
+    private void SetReveal(double width,double height,double? radius=null)
     {
         visibleWidth=width; visibleHeight=height;
         reveal.Rect=RevealRect(width,height);
-        reveal.RadiusX=reveal.RadiusY=Math.Min(28,Math.Min(width,height)/2);
+        reveal.RadiusX=reveal.RadiusY=Math.Min(radius??DockRadius(width,height),Math.Min(width,height)/2);
+        surface.CornerRadius=new(reveal.RadiusX);
         if(compositorBackdrop!=null)
         {
             try { compositorBackdrop.Update(reveal.Rect,reveal.RadiusX,placementScale,vm.Config.Opacity,blurEnabled); }

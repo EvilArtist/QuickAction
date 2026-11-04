@@ -19,9 +19,13 @@ public sealed class Shortcut : Observable
     private bool admin;
     public bool Admin { get => admin; set { admin = value; Changed(); } }
     public int? PinOrder { get; set; }
-    public Shortcut Copy() => (Shortcut)MemberwiseClone();
+    public List<GroupStep>? Steps { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsGroup => Steps != null;
+    public Shortcut Copy() { var copy=(Shortcut)MemberwiseClone(); copy.Steps=Steps?.Select(s=>s.Copy()).ToList(); return copy; }
     public override string ToString() => Name;
 }
+public enum DockIconSize { Small, Medium, Big }
 public enum Edge { Left, Right, Top, Bottom }
 public sealed class Configuration
 {
@@ -30,6 +34,7 @@ public sealed class Configuration
     public List<Shortcut> Shortcuts { get; set; } = [];
     public string Monitor { get; set; } = "";
     public Edge Edge { get; set; } = Edge.Left;
+    public DockIconSize IconSize { get; set; } = DockIconSize.Small;
     public double Position { get; set; } = .5;
     public bool Topmost { get; set; } = true;
     public double Opacity { get; set; } = .82;
@@ -39,11 +44,13 @@ public sealed class Configuration
     {
         if (Language is not ("en" or "vi")) Language = "vi";
         if (Version != 1 || Shortcuts == null || Shortcuts.Count > 10000) throw new InvalidDataException(L10n.T("Cấu hình không được hỗ trợ."));
-        if (!Enum.IsDefined(Edge) || !double.IsFinite(Position) || Position < 0 || Position > 1 || !double.IsFinite(Opacity) || Opacity < .3 || Opacity > 1 || CollapseMilliseconds < 200 || CollapseMilliseconds > 5000) throw new InvalidDataException(L10n.T("Thiết lập dock không hợp lệ."));
+        if (!Enum.IsDefined(IconSize) || !Enum.IsDefined(Edge) || !double.IsFinite(Position) || Position < 0 || Position > 1 || !double.IsFinite(Opacity) || Opacity < .3 || Opacity > 1 || CollapseMilliseconds < 200 || CollapseMilliseconds > 5000) throw new InvalidDataException(L10n.T("Thiết lập dock không hợp lệ."));
         if (Shortcuts.Any(s => s == null || s.Id == Guid.Empty || string.IsNullOrWhiteSpace(s.Name) || s.Path == null || s.Arguments == null || s.WorkingDirectory == null || s.Icon == null) || Shortcuts.Select(s => s.Id).Distinct().Count() != Shortcuts.Count) throw new InvalidDataException(L10n.T("Shortcut không hợp lệ."));
         if (Shortcuts.Count(s => s.PinOrder.HasValue) > 5) throw new InvalidDataException(L10n.T("Chỉ được ghim tối đa 5 app."));
-        foreach (var s in Shortcuts) if (!s.Icon.StartsWith("builtin:") && (System.IO.Path.GetFileName(s.Icon) != s.Icon || s.Icon.Contains(':'))) throw new InvalidDataException(L10n.T("Đường dẫn icon không hợp lệ."));
+        foreach (var s in Shortcuts) if(s.IsGroup) GroupRules.Validate(s.Steps!);
+        foreach (var s in AllShortcuts()) if (!s.Icon.StartsWith("builtin:") && (System.IO.Path.GetFileName(s.Icon) != s.Icon || s.Icon.Contains(':'))) throw new InvalidDataException(L10n.T("Đường dẫn icon không hợp lệ."));
     }
+    public IEnumerable<Shortcut> AllShortcuts() => Shortcuts.SelectMany(s => new[]{s}.Concat(s.Steps?.Select(step=>step.App) ?? []));
 }
 public static class Pins
 {
